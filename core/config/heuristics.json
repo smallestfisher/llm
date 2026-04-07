@@ -1,0 +1,31 @@
+{
+  "group_by_keywords": {
+    "按工厂": "factory_code",
+    "按厂": "factory_code",
+    "按产线": "line_code",
+    "按产品": "product_code",
+    "按料号": "product_code",
+    "按客户": "customer_name",
+    "按周": "week_no"
+  },
+  "metric_keywords": {
+    "可用库存": ["available_qty", "sum"],
+    "安全库存": ["safety_stock", "sum"],
+    "排产": ["target_qty", "sum"],
+    "计划产出": ["target_panel_qty", "sum"],
+    "计划量": ["planned_qty", "sum"],
+    "预测需求": ["forecast_qty", "sum"],
+    "承诺": ["commit_qty", "sum"],
+    "在制": ["wip_qty", "sum"],
+    "销量": ["sales_qty", "sum"],
+    "销售量": ["sales_qty", "sum"],
+    "收入": ["revenue_usd", "sum"],
+    "毛利": ["gross_margin_pct", "avg"],
+    "良率": ["yield_rate", "avg"],
+    "不良": ["defect_qty", "sum"],
+    "缺陷": ["defect_qty", "sum"],
+    "投入": ["input_qty", "sum"],
+    "产出": ["output_qty", "sum"]
+  },
+  "count_keywords": ["数量", "条数", "记录数", "多少条", "多少"]
+}

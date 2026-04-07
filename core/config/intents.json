@@ -1,0 +1,13 @@
+[
+  {"id": "demand_capacity_monthly", "desc": "需求预测 vs 承诺产能 vs 月计划"},
+  {"id": "weekly_daily_actuals", "desc": "周计划 vs 日计划 vs 实绩"},
+  {"id": "inventory_schedule_wip", "desc": "库存可用性 vs 排产 vs 在制品"},
+  {"id": "customer_demand_inventory", "desc": "客户需求 vs 客户侧库存/在途"},
+  {"id": "lifecycle_plan", "desc": "生命周期/应用/技术族与计划关系"},
+  {"id": "line_yield_vs_schedule", "desc": "产线良率/产出 vs 排产"},
+  {"id": "weekly_adjust_reason", "desc": "周计划调整原因统计"},
+  {"id": "sales_vs_plan", "desc": "产销与收入 vs 计划"},
+  {"id": "product_factory_mapping", "desc": "产品与推荐工厂/切割效率"},
+  {"id": "demand_commit_rate", "desc": "预测需求与承诺满足率"},
+  {"id": "simple_table_query", "desc": "单表明细/统计查询"}
+]

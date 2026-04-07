@@ -1,0 +1,48 @@
+{
+  "daily_inventory": {
+    "columns": ["id", "report_date", "factory_code", "warehouse_code", "product_code", "available_qty", "safety_stock"],
+    "date_col": "report_date"
+  },
+  "daily_schedule": {
+    "columns": ["id", "work_date", "factory_code", "line_code", "product_code", "shift", "target_qty"],
+    "date_col": "work_date"
+  },
+  "monthly_plan_approved": {
+    "columns": ["id", "plan_month", "factory_code", "product_code", "target_glass_qty", "target_panel_qty", "version"],
+    "month_col": "plan_month"
+  },
+  "oms_inventory": {
+    "columns": ["id", "report_date", "product_code", "customer_name", "in_transit_qty", "hub_qty", "customer_hub_qty"],
+    "date_col": "report_date"
+  },
+  "p_demand": {
+    "columns": ["id", "p_demand_no", "v_demand_no", "product_code", "commit_month", "commit_qty", "status"],
+    "month_col": "commit_month"
+  },
+  "product_attributes": {
+    "columns": ["id", "product_code", "tech_family", "application", "std_lead_time_days", "moq", "life_cycle"]
+  },
+  "product_mapping": {
+    "columns": ["id", "product_code", "glass_substrate_size", "cut_efficiency", "preferred_factory", "alternative_factory"]
+  },
+  "production_actuals": {
+    "columns": ["id", "work_date", "line_code", "product_code", "input_qty", "output_qty", "defect_qty", "yield_rate"],
+    "date_col": "work_date"
+  },
+  "sales_financial_perf": {
+    "columns": ["id", "report_month", "product_code", "sales_qty", "unit_price_usd", "revenue_usd", "gross_margin_pct"],
+    "month_col": "report_month"
+  },
+  "v_demand": {
+    "columns": ["id", "demand_no", "customer_name", "product_code", "forecast_month", "forecast_qty", "create_time"],
+    "month_col": "forecast_month"
+  },
+  "weekly_rolling_plan": {
+    "columns": ["id", "plan_month", "week_no", "factory_code", "product_code", "planned_qty", "adjust_reason"],
+    "month_col": "plan_month"
+  },
+  "work_in_progress": {
+    "columns": ["id", "lot_id", "factory_code", "product_code", "current_process", "wip_qty", "hold_flag", "update_time"],
+    "date_col": "update_time"
+  }
+}
