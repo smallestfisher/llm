@@ -319,7 +319,11 @@ def node_generate_answer(state: GraphState):
                 summary_text = "\n".join(summary_parts)
 
     # 给大模型看前 50 行预览
-    db_preview = df.head(50).to_markdown(index=False) if df is not None else str(db_result)
+    if df is not None and not df.empty:
+        db_preview = df.head(50).to_markdown(index=False)
+    else:
+        # 🔴 核心改进：显式告诉 LLM 结果为空，防止幻觉
+        db_preview = "[] (当前查询在数据库中未找到任何匹配记录)"
 
     prompt = PromptTemplate.from_template(ANSWER_PROMPT)
     chain = prompt | llm
@@ -335,7 +339,7 @@ def node_generate_answer(state: GraphState):
     
     # 最终结果展示
     full_table = ""
-    if df is not None and len(df) > 0:
+    if df is not None and not df.empty:
         full_table = "\n\n" + df.to_markdown(index=False)
     
     final_output = answer + full_table
