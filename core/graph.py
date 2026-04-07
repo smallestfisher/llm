@@ -14,6 +14,7 @@ from typing import TypedDict, Annotated
 import operator
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
+from langchain_core.callbacks import StdOutCallbackHandler
 from langgraph.graph import StateGraph, END
 
 from core.database import get_db_connection
@@ -126,7 +127,7 @@ def node_write_sql(state: GraphState):
     response = chain.invoke({
         "table_schema": state["table_schema"],
         "question": enhanced_question # 传入带记忆的问题
-    })
+    }, config={"callbacks": [StdOutCallbackHandler()]})
 
     sql = response.content.strip()
     if sql.startswith("```sql"): sql = sql[6:]
@@ -249,6 +250,9 @@ def node_execute_sql(state: GraphState):
                 truncated = True
 
         result = db.run(sql)
+        # 🔴 添加日志：输出查询到的原始结果
+        logger.info(f"raw_db_result: {str(result)[:500]}...") 
+        
         result_len = len(result) if isinstance(result, str) else None
         columns = _extract_headers(sql)
         return {
@@ -318,11 +322,18 @@ def node_generate_answer(state: GraphState):
                         summary_parts.append(f"- {col} 汇总: 总计={df[col].sum():.2f}, 平均={df[col].mean():.2f}")
                 summary_text = "\n".join(summary_parts)
 
-    # 给大模型看前 50 行预览
+    # 给大模型看前 20 行预览
     if df is not None and not df.empty:
-        db_preview = df.head(50).to_markdown(index=False)
+        # 🔴 关键修复：将 DataFrame 中的所有 Decimal 转换为 float，确保 JSON 序列化完美
+        import decimal
+        df_json = df.copy()
+        for col in df_json.select_dtypes(include=['object', 'float', 'int']).columns:
+             # 如果该列包含 Decimal 类型，转换为 float
+             if df_json[col].apply(lambda x: isinstance(x, decimal.Decimal)).any():
+                 df_json[col] = df_json[col].apply(lambda x: float(x) if isinstance(x, decimal.Decimal) else x)
+        
+        db_preview = df_json.head(20).to_json(orient="records", force_ascii=False)
     else:
-        # 🔴 核心改进：显式告诉 LLM 结果为空，防止幻觉
         db_preview = "[] (当前查询在数据库中未找到任何匹配记录)"
 
     prompt = PromptTemplate.from_template(ANSWER_PROMPT)
@@ -333,7 +344,7 @@ def node_generate_answer(state: GraphState):
         "sql_query": sql_query,
         "db_result": db_preview,
         "data_summary": summary_text
-    })
+    }, config={"callbacks": [StdOutCallbackHandler()]})
 
     answer = response.content
     
