@@ -8,7 +8,7 @@ try:
     import pandas as pd
 except Exception:
     pd = None
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from typing import TypedDict, Annotated
 import operator
@@ -17,7 +17,7 @@ from langchain_core.prompts import PromptTemplate
 from langgraph.graph import StateGraph, END
 
 from core.database import get_db_connection
-from core.prompts import TEXT2SQL_PROMPT, ANSWER_PROMPT, build_intent_prompt
+from core.prompts import TEXT2SQL_PROMPT, ANSWER_PROMPT, REFLECT_SQL_PROMPT, build_intent_prompt
 from core.lexicon import normalize_question
 from core.heuristics import refine_simple_filters, extract_recent_days, has_explicit_date, guess_single_table
 from core.config.loader import load_intents, load_tables
@@ -49,12 +49,33 @@ class GraphState(TypedDict):
     sql_error: str
     db_result: str
     final_answer: str
+    retry_count: int
 
 # ==========================================
 # 2. 定义节点 (Nodes)
 # ==========================================
 def node_get_schema(state: GraphState):
-    schema = db.get_table_info()
+    refined = state.get("refined_filters") or {}
+    target_table = refined.get("table")
+    
+    # 策略 1: 如果意图识别直接给出了表名，优先加载该表
+    if target_table:
+        logger.info(f"Loading schema for specific table: {target_table}")
+        schema = db.get_table_info(table_names=[target_table])
+    else:
+        # 策略 2: 扫描问题，看看是否提到了表名关键字
+        norm_q = (state.get("normalized_question") or state["question"]).lower()
+        all_tables = list(load_tables().keys())
+        hit_tables = [t for t in all_tables if t in norm_q]
+        
+        if hit_tables:
+            logger.info(f"Loading schema for matched tables: {hit_tables}")
+            schema = db.get_table_info(table_names=hit_tables)
+        else:
+            # 策略 3: 兜底全量加载
+            logger.info("No specific table identified, loading all target tables.")
+            schema = db.get_table_info()
+
     if DEBUG_TRACE:
         logger.info("table_schema_preview=%s", (schema[:1200] + "...") if len(schema) > 1200 else schema)
     return {"table_schema": schema}
@@ -79,13 +100,18 @@ def _strip_limit(sql: str) -> str:
     return re.sub(r"\\s+limit\\s+\\d+(\\s*,\\s*\\d+)?\\s*$", "", sql, flags=re.IGNORECASE).strip()
 
 def node_normalize_question(state: GraphState):
+    logger.info("--- [思维链] 正在进行问题归一化，处理业务黑话 ---")
     normalized, hits = normalize_question(state["question"])
     if DEBUG_TRACE:
         logger.info("normalized_question=%s hits=%s", normalized, hits)
     return {"normalized_question": normalized, "lexicon_hits": hits}
 
 def node_write_sql(state: GraphState):
-    # 🔴 巧妙的技巧：把记忆拼在当前问题前面传给 LLM，这样你就不需要修改 prompt 文件了！
+    logger.info("--- [思维链] 正在根据表结构和业务逻辑编写 SQL ---")
+    # 初始化/获取重试次数
+    retry_count = state.get("retry_count") or 0
+    
+    # 🔴 巧妙的技巧：把记忆拼在当前问题前面传给 LLM
     history_list = state.get("chat_history", [])
     if history_list:
         history_text = "\n".join(history_list)
@@ -113,13 +139,33 @@ def node_write_sql(state: GraphState):
     # 仅允许 SELECT/CTE 查询
     lower = sql.lower()
     if not (lower.startswith("select") or lower.startswith("with")):
-        return {"sql_query": "", "sql_error": "仅允许只读 SELECT 查询。"}
-    # 明细查询默认加 LIMIT；汇总/聚合不强制 LIMIT
-    is_aggregate = (" group by " in lower) or any(k in lower for k in ("count(", "sum(", "avg(", "min(", "max("))
-    if (not is_aggregate) and " limit " not in lower and not lower.endswith("limit") and not lower.endswith("limit "):
-        sql = f"{sql} LIMIT 200"
+        return {"sql_query": "", "sql_error": "仅允许只读 SELECT 查询。", "retry_count": retry_count}
+    
+    # 不再在此强制加 LIMIT 200，交给 execute_sql 节点的动态截断逻辑处理
+    return {"sql_query": sql, "retry_count": retry_count}
 
-    return {"sql_query": sql}
+def node_reflect_sql(state: GraphState):
+    """SQL 纠错节点"""
+    logger.info("--- [思维链] 发现 SQL 报错，正在反思原因并尝试修复 ---")
+    retry_count = (state.get("retry_count") or 0) + 1
+    logger.warning(f"Reflecting on SQL error (Retry #{retry_count}): {state['sql_error']}")
+    
+    prompt = PromptTemplate.from_template(REFLECT_SQL_PROMPT)
+    chain = prompt | llm
+
+    response = chain.invoke({
+        "question": state["question"],
+        "table_schema": state["table_schema"],
+        "sql_query": state["sql_query"],
+        "error_message": state["sql_error"]
+    })
+
+    sql = response.content.strip()
+    if sql.startswith("```sql"): sql = sql[6:]
+    if sql.startswith("```"): sql = sql[3:]
+    if sql.endswith("```"): sql = sql[:-3]
+    
+    return {"sql_query": sql.strip(), "retry_count": retry_count, "sql_error": ""}
 
 def _safe_json_loads(text: str) -> dict:
     raw = text.strip()
@@ -176,6 +222,7 @@ def node_refine_filters(state: GraphState):
     return {"refined_filters": filters}
 
 def node_execute_sql(state: GraphState):
+    logger.info("--- [思维链] 正在数据库执行生成的 SQL ---")
     sql = state["sql_query"]
     if not sql:
         return {"db_result": "", "sql_error": state.get("sql_error") or "SQL 为空"}
@@ -213,12 +260,12 @@ def node_execute_sql(state: GraphState):
             "columns": columns,
         }
     except Exception as e:
+        logger.error(f"--- [思维链] SQL 执行报错: {str(e)} ---")
         return {"db_result": "", "sql_error": str(e)}
 
 def node_generate_answer(state: GraphState):
     if state.get("sql_error"):
         answer = f"⚠️ 数据库查询出错：\n{state['sql_error']}"
-        # 出错也要记入脑子
         return {
             "final_answer": answer,
             "chat_history": [f"问: {state['question']}\n答: {answer}"]
@@ -226,55 +273,32 @@ def node_generate_answer(state: GraphState):
 
     db_result = state.get("db_result")
     sql_query = state.get("sql_query", "")
-    lower_sql = sql_query.lower()
-
-    # Deterministic formatting for any structured result to avoid LLM hallucination
+    
+    # 使用 Pandas 自动化分析
+    df = None
+    summary_text = ""
     if isinstance(db_result, list) and db_result:
-        is_tuple_rows = all(isinstance(r, tuple) for r in db_result)
-        if is_tuple_rows:
-            headers = state.get("columns") or _extract_headers(sql_query)
-            if not headers or len(headers) != len(db_result[0]):
-                headers = [f"col{i+1}" for i in range(len(db_result[0]))]
-            if pd is not None:
-                df = pd.DataFrame(db_result, columns=headers)
-                table = df.to_markdown(index=False)
-            else:
-                lines = ["| " + " | ".join(headers) + " |", "| " + " | ".join(["---"] * len(headers)) + " |"]
-                for row in db_result:
-                    lines.append("| " + " | ".join([str(v) for v in row]) + " |")
-                table = "\\n".join(lines)
-            # Add time range note if available
-            time_note = ""
-            filters = state.get("refined_filters") or {}
-            if filters.get("recent_days"):
-                days = filters["recent_days"]
-                time_note = f"时间范围：最近 {days} 天（CURDATE()-INTERVAL {days} DAY 至 CURDATE()）\\n\\n"
-            elif filters.get("date_from") or filters.get("date_to"):
-                df = filters.get("date_from") or ""
-                dt = filters.get("date_to") or ""
-                time_note = f"时间范围：{df} 至 {dt}\\n\\n"
-            elif filters.get("month") or filters.get("month_from") or filters.get("month_to"):
-                m = filters.get("month") or ""
-                mf = filters.get("month_from") or ""
-                mt = filters.get("month_to") or ""
-                if m:
-                    time_note = f"时间范围：{m}\\n\\n"
-                else:
-                    time_note = f"时间范围：{mf} 至 {mt}\\n\\n"
-            elif filters.get("latest") is True:
-                time_note = "时间范围：最新一期（按系统时间/回退到最大值）\\n\\n"
+        headers = state.get("columns") or _extract_headers(sql_query)
+        if headers and len(headers) == len(db_result[0]):
+            df = pd.DataFrame(db_result, columns=headers)
+            
+            # 如果行数 > 30，生成智能统计摘要
+            if len(df) > 30:
+                summary_parts = []
+                summary_parts.append(f"数据总量: {len(df)} 条记录。")
+                for col in df.columns:
+                    # 分类列统计
+                    if df[col].dtype == "object" or any(k in col.lower() for k in ["code", "name", "process"]):
+                        v_counts = df[col].value_counts().head(5).to_dict()
+                        if len(v_counts) > 1:
+                            summary_parts.append(f"- {col} 分布: {v_counts}")
+                    # 数值列汇总
+                    if any(k in col.lower() for k in ["qty", "amount", "rate", "yield"]):
+                        summary_parts.append(f"- {col} 汇总: 总计={df[col].sum():.2f}, 平均={df[col].mean():.2f}")
+                summary_text = "\n".join(summary_parts)
 
-            count_note = ""
-            if state.get("row_count") is not None:
-                count_note = f"总行数：{state.get('row_count')}\\n\\n"
-            if state.get("truncated") is True:
-                count_note += f"结果过多，已仅展示前 {SAMPLE_LIMIT} 行样例。\\n\\n"
-
-            answer = "查询结果如下：\\n\\n" + time_note + count_note + table
-            return {
-                "final_answer": answer,
-                "chat_history": [f"问: {state['question']}\\n答: {answer}"]
-            }
+    # 给大模型看前 50 行预览以节省 Token
+    db_preview = df.head(50).to_markdown(index=False) if df is not None else str(db_result)
 
     prompt = PromptTemplate.from_template(ANSWER_PROMPT)
     chain = prompt | llm
@@ -282,43 +306,64 @@ def node_generate_answer(state: GraphState):
     response = chain.invoke({
         "question": state["question"],
         "sql_query": sql_query,
-        "db_result": db_result
+        "db_result": db_preview,
+        "data_summary": summary_text
     })
 
     answer = response.content
     
-    # 🔴 核心：正常回答完毕后，把这轮对话返回。因为定义了 operator.add，它会自动追加到记忆列表里
+    # 最终结果展示
+    full_table = ""
+    if df is not None and len(df) > 0:
+        full_table = "\n\n" + df.to_markdown(index=False)
+    
+    # 小数据直接合并，大数据会在 app.py 处理成附件
+    final_output = answer + (full_table if len(df or []) <= 10 else full_table)
+
     return {
-        "final_answer": answer,
+        "final_answer": final_output,
         "chat_history": [f"问: {state['question']}\n答: {answer}"]
     }
 
 # ==========================================
 # 3. 编排工作流 (Compile Graph)
 # ==========================================
-def create_backend_engine():
+def get_workflow():
     workflow = StateGraph(GraphState)
 
-    workflow.add_node("get_schema", node_get_schema)
     workflow.add_node("normalize_question", node_normalize_question)
     workflow.add_node("extract_intent", node_extract_intent)
     workflow.add_node("refine_filters", node_refine_filters)
+    workflow.add_node("get_schema", node_get_schema)
     workflow.add_node("write_sql", node_write_sql)
     workflow.add_node("execute_sql", node_execute_sql)
+    workflow.add_node("reflect_sql", node_reflect_sql)
     workflow.add_node("generate_answer", node_generate_answer)
 
-    workflow.set_entry_point("get_schema")
-    workflow.add_edge("get_schema", "normalize_question")
+    workflow.set_entry_point("normalize_question")
     workflow.add_edge("normalize_question", "extract_intent")
     workflow.add_edge("extract_intent", "refine_filters")
-    workflow.add_edge("refine_filters", "write_sql")
+    workflow.add_edge("refine_filters", "get_schema")
+    workflow.add_edge("get_schema", "write_sql")
     workflow.add_edge("write_sql", "execute_sql")
-    workflow.add_edge("execute_sql", "generate_answer")
+
+    # 🔴 核心：条件路由
+    def route_after_execute(state: GraphState):
+        if state.get("sql_error") and (state.get("retry_count") or 0) < 3:
+            return "reflect_sql"
+        return "generate_answer"
+
+    workflow.add_conditional_edges(
+        "execute_sql",
+        route_after_execute,
+        {
+            "reflect_sql": "reflect_sql",
+            "generate_answer": "generate_answer"
+        }
+    )
+
+    workflow.add_edge("reflect_sql", "execute_sql") # 反思后重试执行
     workflow.add_edge("generate_answer", END)
 
+    return workflow
 
-     # 🔴 核心变化：将记忆存入当前目录的 langgraph_memory.db
-    conn = sqlite3.connect("langgraph_memory.db", check_same_thread=False)
-    memory = SqliteSaver(conn)
-
-    return workflow.compile(checkpointer=memory)

@@ -6,3 +6,7 @@ sqlalchemy
 pymysql
 python-dotenv
 pandas
+chainlit
+tabulate
+mysql-connector-python
+aiosqlite

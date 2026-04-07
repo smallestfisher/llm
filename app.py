@@ -11,13 +11,14 @@ logging.basicConfig(level=logging.INFO)
 DEBUG_TRACE = os.getenv("DEBUG_TRACE", "0") == "1"
 
 from core.auth_db import SessionLocal, User
-from core.graph import create_backend_engine
-from core.local_data import LocalSQLiteDataLayer # 🔴 引入咱们手写的数据层
+from core.graph import get_workflow
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from core.local_data import LocalSQLiteDataLayer
 
 # 🔴 注册本地数据层（此时前端左侧就会自动出现历史记录侧边栏）
 cl_data._data_layer = LocalSQLiteDataLayer("chainlit_ui.db")
 
-engine = create_backend_engine()
+workflow = get_workflow()
 
 @cl.password_auth_callback
 def auth_callback(username: str, password: str):
@@ -56,70 +57,67 @@ async def on_message(message: cl.Message):
     cl.user_session.set("thread_id", thread_id)
     config = {"configurable": {"thread_id": thread_id}}
 
-    ui_msg = cl.Message(content="")
+    ui_msg = cl.Message(content="正在处理您的请求...")
     await ui_msg.send()
 
     start_ts = time.monotonic()
-    template_route = None
     try:
-        for output in engine.stream(inputs, config=config):
-            for node_name, node_output in output.items():
-                if node_name == "extract_intent":
-                    intent = node_output.get("intent")
-                    confidence = node_output.get("intent_confidence")
-                    filters = node_output.get("intent_filters")
-                    if DEBUG_TRACE:
-                        logger.info("intent=%s confidence=%s filters=%s", intent, confidence, filters)
-                    async with cl.Step(name="Template Match", type="tool") as step:
-                        step.output = (
-                            f"intent: {intent}\n"
-                            f"confidence: {confidence}\n"
-                            f"filters: {filters}"
-                        )
-                if node_name == "refine_filters":
-                    refined = node_output.get("refined_filters")
-                    if refined:
-                        async with cl.Step(name="Refined Filters", type="tool") as step:
-                            step.output = f"{refined}"
-                if node_name == "write_sql" and node_output.get("sql_query"):
-                    sql_source = "LLM SQL"
-                    template_route = sql_source
-                    if DEBUG_TRACE:
-                        logger.info("%s: %s", sql_source, node_output.get("sql_query"))
-                    async with cl.Step(name=sql_source, type="tool") as step:
-                        step.output = node_output["sql_query"]
-                if node_name == "execute_sql":
-                    async with cl.Step(name="DB Result (Preview)", type="tool") as step:
-                        raw = node_output.get("db_result", "")
-                        result_len = node_output.get("db_result_len")
-                        row_count = node_output.get("row_count")
-                        columns = node_output.get("columns")
-                        if DEBUG_TRACE:
-                            logger.info("db_result_len=%s", result_len)
-                        preview = raw if isinstance(raw, str) else str(raw)
-                        if len(preview) > 1200:
-                            preview = preview[:1200] + "\n... (truncated)"
-                        meta = []
-                        if columns:
-                            meta.append(f"columns: {columns}")
-                        if row_count is not None:
-                            meta.append(f"row_count: {row_count}")
-                        if result_len is not None:
-                            meta.append(f"raw_len: {result_len}")
-                        meta_text = ("\n".join(meta) + "\n") if meta else ""
-                        step.output = meta_text + preview
-                if "final_answer" in node_output:
-                    ui_msg.content = node_output["final_answer"]
-                    await ui_msg.update()
+        async with AsyncSqliteSaver.from_conn_string("langgraph_memory.db") as saver:
+            # 现场编译引擎
+            engine = workflow.compile(checkpointer=saver)
+            
+            async for output in engine.astream(inputs, config=config):
+                for node_name, node_output in output.items():
+                    # 为每个节点创建一个 Step (思维链展示)
+                    step_name = {
+                        "normalize_question": "🔍 问题归一化",
+                        "extract_intent": "🎯 意图识别",
+                        "refine_filters": "🛠️ 规则补全",
+                        "get_schema": "📚 加载表结构",
+                        "write_sql": "✍️ 生成 SQL",
+                        "execute_sql": "🚀 执行查询",
+                        "reflect_sql": "🔧 SQL 纠错反思",
+                        "generate_answer": "📝 组织语言"
+                    }.get(node_name, node_name)
+
+                    async with cl.Step(name=step_name) as step:
+                        # 根据不同节点输出不同的详细信息
+                        if node_name == "extract_intent":
+                            step.output = f"识别到意图: {node_output.get('intent')}\n置信度: {node_output.get('intent_confidence')}"
+                        elif node_name == "get_schema":
+                            schema_len = len(node_output.get("table_schema", ""))
+                            step.output = f"已加载相关表结构 (约 {schema_len} 字符)"
+                        elif node_name == "write_sql":
+                            step.output = f"```sql\n{node_output.get('sql_query')}\n```"
+                        elif node_name == "execute_sql":
+                            if node_output.get("sql_error"):
+                                step.output = f"❌ 执行失败: {node_output.get('sql_error')}"
+                            else:
+                                res_len = len(str(node_output.get("db_result", "")))
+                                step.output = f"✅ 查询成功，返回数据长度: {res_len}"
+                        elif node_name == "reflect_sql":
+                            step.output = f"⚠️ 发现错误，正在进行第 {node_output.get('retry_count')} 次修正...\n错误原因: {node_output.get('sql_error')}"
+                        elif node_name == "generate_answer":
+                            step.output = "正在生成自然语言回答..."
+                            final_answer = node_output.get("final_answer", "")
+                            
+                            if len(final_answer) > 10000:
+                                # 如果内容太长，部分作为正文，全文作为附件
+                                ui_msg.content = "查询结果较多，已为您生成详细报告（见下方附件）。\n\n" + final_answer[:500] + "..."
+                                await ui_msg.update()
+                                
+                                # 发送全文附件
+                                text_element = cl.Text(name="详细查询结果", content=final_answer, display="inline")
+                                await cl.Message(content="点击展开完整结果：", elements=[text_element]).send()
+                            else:
+                                ui_msg.content = final_answer
+                                await ui_msg.update()
+                        else:
+                            step.output = f"节点 {node_name} 执行完毕"
+
     except Exception as e:
         ui_msg.content = f"⚠️ 抱歉，查询发生错误：\n```python\n{str(e)}\n```"
         await ui_msg.update()
     finally:
         elapsed_ms = int((time.monotonic() - start_ts) * 1000)
-        async with cl.Step(name="Execution Summary", type="tool") as step:
-            step.output = (
-                f"route: {template_route or 'unknown'}\n"
-                f"elapsed_ms: {elapsed_ms}"
-            )
-        if DEBUG_TRACE:
-            logger.info("route=%s elapsed_ms=%s", template_route or "unknown", elapsed_ms)
+        logger.info("Thread %s finished in %sms", thread_id, elapsed_ms)

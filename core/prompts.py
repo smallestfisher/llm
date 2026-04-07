@@ -20,7 +20,15 @@ TEXT2SQL_PROMPT = """你是一个资深的制造企业 MySQL 数据库专家。
 4. 如果用户未指定时间范围，默认限制最近 30 天或最近 3 个月（按问题粒度）。
 5. 若是明细/清单类查询，请加 LIMIT（默认 200）；若是统计汇总类（GROUP BY/聚合），可以不加 LIMIT。
 
+【典型业务逻辑示例】
+- 查询计划达成率：需关联 monthly_plan_approved (计划) 与 production_actuals (实绩)，按月和产品聚合：
+  SELECT p.plan_month, p.product_code, SUM(a.output_qty)/p.target_panel_qty as achievement_rate FROM monthly_plan_approved p JOIN production_actuals a ON p.product_code = a.product_code AND DATE_FORMAT(a.work_date, '%Y-%m') = p.plan_month GROUP BY 1, 2;
+- 查询库存缺口：需关联 p_demand (需求) 与 daily_inventory (库存) 及 oms_inventory (在途)：
+  SELECT d.product_code, d.commit_qty - (i.available_qty + o.in_transit_qty) as shortage FROM p_demand d LEFT JOIN daily_inventory i ON d.product_code = i.product_code LEFT JOIN oms_inventory o ON d.product_code = o.product_code WHERE d.commit_month = '2024-05';
+- 跨粒度查询：当用户问“本月产出”时，实绩表是日粒度，需要 SUM(output_qty) 并按月过滤。
+
 用户的问题：{question}
+
 """
 
 # 2. 生成最终回答的系统提示词
@@ -29,14 +37,38 @@ ANSWER_PROMPT = """你是一个 PMC 部门的数据分析助理。
 
 用户问题：{question}
 执行的 SQL：{sql_query}
-数据库返回结果：{db_result}
+数据库返回预览：{db_result}
+统计分析结果（如有）：{data_summary}
 
 【要求】
-1. 如果查询结果为空，请直接告知用户没有找到符合条件的数据。
-2. 如果结果包含统计字段（如 total/qty/amount/metric_value），必须输出具体数值，不能只列出维度。
+1. 如果有统计分析结果，请优先基于统计结果进行概括性总结。
+2. 如果数据量较大，请分析其核心分布（例如哪个工厂最多、平均产出是多少等）。
 3. 不要自行推算日期范围，除非 SQL 中明确给出。
 4. 如果数据量较大，请尽量使用 Markdown 表格进行格式化展示。
 5. 语气要专业、简洁，像汇报工作一样。
+"""
+
+
+# 3. SQL 纠错/反思提示词
+REFLECT_SQL_PROMPT = """你是一个 MySQL 专家。刚才你生成的 SQL 执行失败了。
+请根据以下上下文、表结构信息以及报错信息，修复 SQL。
+
+【原始问题】
+{question}
+
+【表结构】
+{table_schema}
+
+【执行失败的 SQL】
+{sql_query}
+
+【报错信息】
+{error_message}
+
+【修复要求】
+1. 分析报错原因（例如：字段名写错、表别名冲突、JOIN 条件缺失等）。
+2. 只输出修复后的纯 SQL 语句，不要包含任何解释。
+3. 确保符合 MySQL 8.0 语法。
 """
 
 
