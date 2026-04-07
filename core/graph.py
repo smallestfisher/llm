@@ -1,4 +1,3 @@
-# 1. 顶部新增引入
 import sqlite3
 import json
 import os
@@ -8,6 +7,7 @@ try:
     import pandas as pd
 except Exception:
     pd = None
+import plotly.express as px
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from typing import TypedDict, Annotated
@@ -36,7 +36,6 @@ SAMPLE_LIMIT = int(os.getenv("SAMPLE_LIMIT", "200"))
 # ==========================================
 class GraphState(TypedDict):
     question: str
-    # 🔴 核心：Annotated + operator.add 表示每次返回历史记录时，自动往列表里追加，而不是覆盖
     chat_history: Annotated[list, operator.add] 
     table_schema: str
     normalized_question: str
@@ -50,6 +49,7 @@ class GraphState(TypedDict):
     db_result: str
     final_answer: str
     retry_count: int
+    chart_data: dict # 🔴 存放可视化图表 JSON
 
 # ==========================================
 # 2. 定义节点 (Nodes)
@@ -82,13 +82,13 @@ def node_get_schema(state: GraphState):
 
 
 def _extract_headers(sql: str):
-    m = re.search(r"select\\s+(.*?)\\s+from\\s", sql, re.IGNORECASE | re.DOTALL)
+    m = re.search(r"select\s+(.*?)\s+from\s", sql, re.IGNORECASE | re.DOTALL)
     if not m:
         return []
     parts = [p.strip() for p in m.group(1).split(",")]
     headers = []
     for p in parts:
-        alias = re.search(r"\\bas\\s+([\\w_]+)\\b", p, re.IGNORECASE)
+        alias = re.search(r"\bas\s+([\w_]+)\b", p, re.IGNORECASE)
         if alias:
             headers.append(alias.group(1))
         else:
@@ -97,7 +97,7 @@ def _extract_headers(sql: str):
 
 
 def _strip_limit(sql: str) -> str:
-    return re.sub(r"\\s+limit\\s+\\d+(\\s*,\\s*\\d+)?\\s*$", "", sql, flags=re.IGNORECASE).strip()
+    return re.sub(r"\s+limit\s+\d+(\s*,\s*\d+)?\s*$", "", sql, flags=re.IGNORECASE).strip()
 
 def node_normalize_question(state: GraphState):
     logger.info("--- [思维链] 正在进行问题归一化，处理业务黑话 ---")
@@ -277,27 +277,48 @@ def node_generate_answer(state: GraphState):
     # 使用 Pandas 自动化分析
     df = None
     summary_text = ""
+    chart_json = None
+    
     if isinstance(db_result, list) and db_result:
         headers = state.get("columns") or _extract_headers(sql_query)
         if headers and len(headers) == len(db_result[0]):
             df = pd.DataFrame(db_result, columns=headers)
             
-            # 如果行数 > 30，生成智能统计摘要
+            # --- 可视化决策引擎 ---
+            try:
+                # 如果有 GROUP BY 且有数值列，自动生成图表
+                num_cols = df.select_dtypes(include=['number']).columns.tolist()
+                cat_cols = df.select_dtypes(include=['object']).columns.tolist()
+                
+                if len(cat_cols) >= 1 and len(num_cols) >= 1 and len(df) > 1:
+                    # 优先选第一个分类字段和第一个数值字段绘图
+                    # 如果分类字段是日期，画折线图；否则画柱状图
+                    x_col = cat_cols[0]
+                    y_col = num_cols[0]
+                    
+                    if "date" in x_col.lower() or "month" in x_col.lower():
+                        fig = px.line(df, x=x_col, y=y_col, title=f"{y_col} 变化趋势", markers=True)
+                    else:
+                        fig = px.bar(df, x=x_col, y=y_col, title=f"各 {x_col} 的 {y_col} 分布", color=x_col)
+                    
+                    chart_json = fig.to_json()
+            except Exception as e:
+                logger.warning(f"Failed to generate chart: {e}")
+
+            # --- 智能统计摘要 ---
             if len(df) > 30:
                 summary_parts = []
                 summary_parts.append(f"数据总量: {len(df)} 条记录。")
                 for col in df.columns:
-                    # 分类列统计
                     if df[col].dtype == "object" or any(k in col.lower() for k in ["code", "name", "process"]):
                         v_counts = df[col].value_counts().head(5).to_dict()
                         if len(v_counts) > 1:
                             summary_parts.append(f"- {col} 分布: {v_counts}")
-                    # 数值列汇总
                     if any(k in col.lower() for k in ["qty", "amount", "rate", "yield"]):
                         summary_parts.append(f"- {col} 汇总: 总计={df[col].sum():.2f}, 平均={df[col].mean():.2f}")
                 summary_text = "\n".join(summary_parts)
 
-    # 给大模型看前 50 行预览以节省 Token
+    # 给大模型看前 50 行预览
     db_preview = df.head(50).to_markdown(index=False) if df is not None else str(db_result)
 
     prompt = PromptTemplate.from_template(ANSWER_PROMPT)
@@ -317,11 +338,11 @@ def node_generate_answer(state: GraphState):
     if df is not None and len(df) > 0:
         full_table = "\n\n" + df.to_markdown(index=False)
     
-    # 小数据直接合并，大数据会在 app.py 处理成附件
-    final_output = answer + (full_table if len(df or []) <= 10 else full_table)
+    final_output = answer + full_table
 
     return {
         "final_answer": final_output,
+        "chart_data": chart_json, # 传给前端渲染
         "chat_history": [f"问: {state['question']}\n答: {answer}"]
     }
 
@@ -366,4 +387,3 @@ def get_workflow():
     workflow.add_edge("generate_answer", END)
 
     return workflow
-

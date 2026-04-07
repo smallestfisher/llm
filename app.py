@@ -35,12 +35,25 @@ def auth_callback(username: str, password: str):
 # 🔴 场景 A：新建聊天时
 @cl.on_chat_start
 async def on_chat_start():
-    # Chainlit 会自动生成一个原生的 thread_id，把它抓下来当做大模型的记忆 ID
     cl.user_session.set("thread_id", cl.context.session.thread_id)
-    
     user = cl.user_session.get("user")
-    welcome_msg = f"你好，**{user.identifier}**！我是你的专属数据库助手。你想查点什么？"
-    await cl.Message(content=welcome_msg).send()
+    
+    actions = [
+        cl.Action(name="quick_inventory", value="查询目前各工厂库存预警情况", label="🚨 库存预警", description="查看缺口情况"),
+        cl.Action(name="quick_production", value="分析本月各工厂的计划达成率", label="📈 计划达成率", description="对比计划与实绩"),
+        cl.Action(name="quick_wip", value="分析当前 WIP 在各工序的分布瓶颈", label="🏭 WIP分布", description="查找堵塞点")
+    ]
+    
+    welcome_msg = f"你好，**{user.identifier}**！我是 BOE 数据副驾驶 V2.0。\n已接入 12 张核心业务表，为您提供生产全链路决策支持。"
+    await cl.Message(content=welcome_msg, actions=actions).send()
+
+@cl.on_action("quick_inventory")
+@cl.on_action("quick_production")
+@cl.on_action("quick_wip")
+async def on_action(action):
+    await cl.Message(content=f"已触发快捷查询：{action.value}").send()
+    # 模拟用户发送消息
+    await on_message(cl.Message(content=action.value))
 
 # 🔴 场景 B：点击侧边栏恢复历史聊天时
 @cl.on_chat_resume
@@ -98,10 +111,18 @@ async def on_message(message: cl.Message):
                         elif node_name == "reflect_sql":
                             step.output = f"⚠️ 发现错误，正在进行第 {node_output.get('retry_count')} 次修正...\n错误原因: {node_output.get('sql_error')}"
                         elif node_name == "generate_answer":
-                            step.output = "正在生成自然语言回答..."
+                            step.output = "正在生成自然语言回答并渲染可视化..."
                             final_answer = node_output.get("final_answer", "")
-                            
+                            chart_json = node_output.get("chart_data")
+
+                            # 如果有图表数据，渲染 Plotly 图表
+                            if chart_json:
+                                import plotly.io as pio
+                                fig = pio.from_json(chart_json)
+                                await cl.Plotly(figure=fig, name="可视化图表", display="inline").send()
+
                             if len(final_answer) > 10000:
+
                                 # 如果内容太长，部分作为正文，全文作为附件
                                 ui_msg.content = "查询结果较多，已为您生成详细报告（见下方附件）。\n\n" + final_answer[:500] + "..."
                                 await ui_msg.update()

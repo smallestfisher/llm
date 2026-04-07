@@ -1,0 +1,52 @@
+import sqlite3
+import json
+import os
+import logging
+import re
+try:
+    import pandas as pd
+except Exception:
+    pd = None
+import plotly.express as px
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+from typing import TypedDict, Annotated
+import operator
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from langgraph.graph import StateGraph, END
+
+from core.database import get_db_connection
+from core.prompts import TEXT2SQL_PROMPT, ANSWER_PROMPT, REFLECT_SQL_PROMPT, build_intent_prompt
+from core.lexicon import normalize_question
+from core.heuristics import refine_simple_filters, extract_recent_days, has_explicit_date, guess_single_table
+from core.config.loader import load_intents, load_tables
+
+logger = logging.getLogger("boe.graph")
+DEBUG_TRACE = os.getenv("DEBUG_TRACE", "0") == "1"
+
+llm = ChatOpenAI(model="Qwen/Qwen3-14B", temperature=0)
+db = get_db_connection()
+
+MAX_DETAIL_ROWS = int(os.getenv("MAX_DETAIL_ROWS", "2000"))
+SAMPLE_LIMIT = int(os.getenv("SAMPLE_LIMIT", "200"))
+
+# ==========================================
+# 1. 定义状态总线 (加入 chat_history)
+# ==========================================
+class GraphState(TypedDict):
+    question: str
+    chat_history: Annotated[list, operator.add] 
+    table_schema: str
+    normalized_question: str
+    lexicon_hits: list
+    intent: str
+    intent_confidence: float
+    intent_filters: dict
+    refined_filters: dict
+    sql_query: str
+    sql_error: str
+    db_result: str
+    final_answer: str
+    retry_count: int
+    chart_data: dict # 🔴 存放可视化图表 JSON

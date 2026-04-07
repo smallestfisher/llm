@@ -10,3 +10,4 @@ chainlit
 tabulate
 mysql-connector-python
 aiosqlite
+plotly
