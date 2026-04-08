@@ -39,21 +39,22 @@ async def on_chat_start():
     user = cl.user_session.get("user")
     
     actions = [
-        cl.Action(name="quick_inventory", value="查询目前各工厂库存预警情况", label="🚨 库存预警", description="查看缺口情况"),
-        cl.Action(name="quick_production", value="分析本月各工厂的计划达成率", label="📈 计划达成率", description="对比计划与实绩"),
-        cl.Action(name="quick_wip", value="分析当前 WIP 在各工序的分布瓶颈", label="🏭 WIP分布", description="查找堵塞点")
+        cl.Action(name="quick_inventory", label="🚨 库存预警", description="查看缺口情况", payload={"value": "查询目前各工厂库存预警情况"}),
+        cl.Action(name="quick_production", label="📈 计划达成率", description="对比计划与实绩", payload={"value": "分析本月各工厂的计划达成率"}),
+        cl.Action(name="quick_wip", label="🏭 WIP分布", description="查找堵塞点", payload={"value": "分析当前 WIP 在各工序的分布瓶颈"})
     ]
     
     welcome_msg = f"你好，**{user.identifier}**！我是 BOE 数据副驾驶 V2.0。\n已接入 12 张核心业务表，为您提供生产全链路决策支持。"
     await cl.Message(content=welcome_msg, actions=actions).send()
 
-@cl.on_action("quick_inventory")
-@cl.on_action("quick_production")
-@cl.on_action("quick_wip")
-async def on_action(action):
-    await cl.Message(content=f"已触发快捷查询：{action.value}").send()
+@cl.action_callback("quick_inventory")
+@cl.action_callback("quick_production")
+@cl.action_callback("quick_wip")
+async def on_action(action: cl.Action):
+    query = action.payload.get("value")
+    await cl.Message(content=f"已触发快捷查询：{query}").send()
     # 模拟用户发送消息
-    await on_message(cl.Message(content=action.value))
+    await on_message(cl.Message(content=query))
 
 # 🔴 场景 B：点击侧边栏恢复历史聊天时
 @cl.on_chat_resume
