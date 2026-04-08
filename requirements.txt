@@ -9,3 +9,5 @@ tabulate
 mysql-connector-python
 aiosqlite
 plotly
+langgraph-checkpoint-sqlite
+bcrypt

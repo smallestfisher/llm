@@ -21,6 +21,10 @@ from core.lexicon import normalize_question
 from core.heuristics import refine_simple_filters, extract_recent_days, has_explicit_date, guess_single_table
 from core.config.loader import load_intents, load_tables
 
+from datetime import date, datetime
+
+
+
 logger = logging.getLogger("boe.graph")
 DEBUG_TRACE = os.getenv("DEBUG_TRACE", "0") == "1"
 
@@ -269,7 +273,17 @@ def node_execute_sql(state: GraphState):
         if isinstance(result, list):
             for r in result:
                 if isinstance(r, (list, tuple)):
-                    formatted_result.append(tuple(r))
+                    #formatted_result.append(tuple(r))
+                    new_elements = []
+                    for item in r:
+                        # 检测是否为日期/时间对象
+                        if isinstance(item, (date, datetime)):
+                            # 转换为标准格式字符串
+                            new_elements.append(item.strftime("%Y-%m-%d"))
+                        else:
+                            # 非日期对象保持原样
+                            new_elements.append(item)
+                    formatted_result.append(new_elements)
                 else:
                     formatted_result.append((r,))
         

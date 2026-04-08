@@ -88,6 +88,14 @@ async def on_message(message: cl.Message):
                         # 发送最终结果
                         await cl.Message(content=final_answer).send()
 
+                        # 检查并展示表格数据
+                        table_data = node_output.get("table_data", [])
+                        if table_data:
+                            await cl.Message(
+                                content="📊 查询结果详情：",
+                                elements=[cl.DataTable(data=table_data, name="result_table")]
+                            ).send()
+
     except Exception as e:
         thinking_msg.content = f"⚠️ 处理出错: {str(e)}"
         await thinking_msg.update()
