@@ -13,9 +13,15 @@ class Database:
         with self.engine.connect() as conn:
             result = conn.execute(text(sql))
             if not result.returns_rows:
-                return []
+                return [], []
+            columns = list(result.keys())
+            if not columns:
+                cursor = getattr(result, "cursor", None)
+                description = getattr(cursor, "description", None) if cursor is not None else None
+                if description:
+                    columns = [d[0] for d in description if d and d[0]]
             rows = result.fetchall()
-            return [tuple(row) for row in rows]
+            return [tuple(row) for row in rows], columns
 
 
 def get_db_connection() -> Database:

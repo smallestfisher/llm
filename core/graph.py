@@ -22,6 +22,7 @@ from core.heuristics import refine_simple_filters, extract_recent_days, has_expl
 from core.config.loader import load_intents, load_tables
 
 from datetime import date, datetime
+from decimal import Decimal
 
 
 
@@ -159,53 +160,6 @@ def node_reflect_sql(state: GraphState):
     if sql.endswith("```"): sql = sql[:-3]
     return {"sql_query": sql.strip(), "retry_count": retry_count, "sql_error": ""}
 
-# ... (后续函数实现 node_execute_sql, node_generate_answer, get_workflow 保持不变) ...
-def _extract_headers(sql: str):
-    m = re.search(r"select\s+(.*?)\s+from\s", sql, re.IGNORECASE | re.DOTALL)
-    if not m:
-        return []
-    parts = [p.strip() for p in m.group(1).split(",")]
-    headers = []
-    for p in parts:
-        alias = re.search(r"\bas\s+([\w_]+)\b", p, re.IGNORECASE)
-        if alias:
-            headers.append(alias.group(1))
-        else:
-            headers.append(p.split(".")[-1].strip("` "))
-    return headers
-
-def _extract_table_name(sql: str) -> str:
-    m = re.search(r"\bfrom\s+([`\"\[]?)([\w\.]+)\1", sql, re.IGNORECASE)
-    if not m:
-        return ""
-    raw = m.group(2)
-    return raw.split(".")[-1].strip("`\"[]")
-
-def _table_columns_from_config(table_name: str):
-    if not table_name:
-        return []
-    table = load_tables().get(table_name)
-    if not table:
-        return []
-    cols = table.get("columns", [])
-    names = []
-    for c in cols:
-        if isinstance(c, str):
-            name = c.split(" ")[0].strip()
-            if name:
-                names.append(name)
-    return names
-
-def _infer_headers(sql: str):
-    headers = _extract_headers(sql)
-    if not headers:
-        return []
-    if any(h == "*" or h.endswith(".*") for h in headers):
-        table_name = _extract_table_name(sql)
-        table_cols = _table_columns_from_config(table_name)
-        if table_cols:
-            return table_cols
-    return headers
 
 def _strip_limit(sql: str) -> str:
     return re.sub(r"\s+limit\s+\d+(\s*,\s*\d+)?\s*$", "", sql, flags=re.IGNORECASE).strip()
@@ -266,34 +220,27 @@ def node_execute_sql(state: GraphState):
                 sql = f"{sql} LIMIT {SAMPLE_LIMIT}"
                 truncated = True
         
-        result = db.run(sql)
-        
-        # 确保 result 是列表格式，元素是 tuple
+        # 执行查询
+        result, columns = db.run(sql)
+        logger.info(f"========================={columns}")   
+        # 确保 result 是列表格式，元素是 list
         formatted_result = []
-        if isinstance(result, list):
-            for r in result:
-                if isinstance(r, (list, tuple)):
-                    #formatted_result.append(tuple(r))
-                    new_elements = []
-                    for item in r:
-                        # 检测是否为日期/时间对象
-                        if isinstance(item, (date, datetime)):
-                            # 转换为标准格式字符串
-                            new_elements.append(item.strftime("%Y-%m-%d"))
-                        else:
-                            # 非日期对象保持原样
-                            new_elements.append(item)
-                    formatted_result.append(new_elements)
+        for r in result:
+            new_elements = []
+            for item in r:
+                # 检测是否为日期/时间对象
+                if isinstance(item, (date, datetime)):
+                    new_elements.append(item.strftime("%Y-%m-%d"))
                 else:
-                    formatted_result.append((r,))
+                    new_elements.append(item)
+            formatted_result.append(new_elements)
         
-        columns = _extract_headers(sql)
         return {
             "db_result": formatted_result,
             "sql_error": "",
             "row_count": row_count,
             "truncated": truncated,
-            "columns": columns,
+            "table_columns": columns,
         }
     except Exception as e:
         logger.error(f"SQL Execution Error: {e}")
@@ -341,7 +288,7 @@ def node_generate_answer(state: GraphState):
 
     db_result = state.get("db_result", [])
     sql_query = state.get("sql_query", "")
-    columns = state.get("columns", [])
+    columns = state.get("table_columns", [])
 
     # 使用 pandas 构建 DataFrame
     if db_result and columns:
@@ -364,7 +311,20 @@ def node_generate_answer(state: GraphState):
 
         # 预览数据（限制前 20 行给 LLM）
         db_preview = df.head(20).to_json(orient="records", force_ascii=False)
-        table_data = df.to_dict(orient="records")
+        # table_data = df.to_dict(orient="records")
+       
+
+        # 2. 将包含 Decimal 类型的列转换为 float
+        for col in df.select_dtypes(include=['object']).columns:
+            if any(isinstance(val, Decimal) for val in df[col]):
+                df[col] = df[col].astype(float)
+
+        # 3. 【最关键的修改】：把 DataFrame 转换回原生字典列表！
+        # 这样赋值给 table_data，LangGraph 的 msgpack 序列化就不会再报错了
+        # table_data = df.to_dict(orient="records")
+        table_data = df.to_markdown(index=False, floatfmt=",.2f")
+
+        logger.info(f"table_data 样例: {table_data[:2]}") # 打印前两行看看
     else:
         db_preview = "[]"
         table_data = []
@@ -376,6 +336,9 @@ def node_generate_answer(state: GraphState):
         db_result=db_preview,
         data_summary=summary_text
     )
+
+    logger.info(f"prompt: {prompt}")
+
     answer = _llm_complete(prompt)
 
     return {
@@ -423,4 +386,3 @@ def get_workflow():
     workflow.add_edge("reflect_sql", "execute_sql")
     workflow.add_edge("generate_answer", END)
     return workflow
-

@@ -92,8 +92,8 @@ async def on_message(message: cl.Message):
                         table_data = node_output.get("table_data", [])
                         if table_data:
                             await cl.Message(
-                                content="📊 查询结果详情：",
-                                elements=[cl.DataTable(data=table_data, name="result_table")]
+                                content=f"📊 查询结果详情：\n{table_data}",
+                                # elements=[cl.DataTable(data=table_data, name="result_table")]
                             ).send()
 
     except Exception as e:
