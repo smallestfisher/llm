@@ -1,45 +1,34 @@
-import re
-from difflib import SequenceMatcher
-from typing import Dict, List, Tuple
+# 核心业务术语映射
+# 格式: "用户口语/模糊术语": ["标准字段/逻辑表达"]
+LEXICON_MAP = {
+    # 产出与良率
+    "产出": "output_qty",
+    "良率": "yield_rate",
+    "不良率": "(100 - yield_rate)",
+    "产线情况": "input_qty, output_qty, yield_rate",
+    
+    # 异常与停机
+    "停线": "downtime_hours > 0",
+    "异常": "defect_qty > 0 OR downtime_hours > 0",
+    "瓶颈": "priority >= 4 AND process_entry_time < DATE_SUB(NOW(), INTERVAL 12 HOUR)",
+    "积压": "wip_qty > 1000",
+    "不良": "defect_type_code",
+    
+    # 计划与需求
+    "齐套": "available_qty + in_transit_qty",
+    "紧急": "priority = 5 OR status = 'Urgent'",
+    "任务": "target_qty",
+    
+    # 时间缩写
+    "上周": "WEEK(work_date) = WEEK(NOW()) - 1",
+    "本月": "DATE_FORMAT(work_date, '%Y-%m') = DATE_FORMAT(NOW(), '%Y-%m')",
+}
 
-from core.config.loader import load_lexicon
-
-
-LEXICON: Dict[str, str] = load_lexicon()
-
-
-def _similar(a: str, b: str) -> float:
-    return SequenceMatcher(None, a, b).ratio()
-
-
-def normalize_question(question: str, min_ratio: float = 0.84) -> Tuple[str, List[str]]:
-    """
-    将黑话/简称归一化到标准表或字段名，返回增强问题与命中词列表。
-    """
-    q = question
-    hits: List[str] = []
-
-    # 1) 直接替换命中
-    for k, v in LEXICON.items():
-        if k in q:
-            q = q.replace(k, f"{k}({v})")
-            hits.append(k)
-
-    # 2) 模糊匹配：对未命中的短词做近似映射
-    # 仅对中文词段做粗略匹配，避免误伤数字/英文
-    tokens = re.findall(r"[\u4e00-\u9fff]{2,}", q)
-    for tok in tokens:
-        if tok in hits:
-            continue
-        best = None
-        best_score = 0.0
-        for k in LEXICON.keys():
-            score = _similar(tok, k)
-            if score > best_score:
-                best_score = score
-                best = k
-        if best and best_score >= min_ratio:
-            q = q.replace(tok, f"{tok}({LEXICON[best]})")
-            hits.append(tok)
-
-    return q, hits
+def normalize_question(question: str):
+    """对用户问题中的口语进行标准化替换，并返回匹配的词条列表"""
+    hits = []
+    for colloquial, formal in LEXICON_MAP.items():
+        if colloquial in question:
+            hits.append(colloquial)
+            question = question.replace(colloquial, formal)
+    return question, hits

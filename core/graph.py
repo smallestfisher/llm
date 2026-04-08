@@ -12,13 +12,11 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from typing import TypedDict, Annotated
 import operator
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import PromptTemplate
-from langchain_core.callbacks import StdOutCallbackHandler
+from openai import OpenAI
 from langgraph.graph import StateGraph, END
 
 from core.database import get_db_connection
-from core.prompts import TEXT2SQL_PROMPT, ANSWER_PROMPT, REFLECT_SQL_PROMPT, build_intent_prompt
+from core.prompts import TEXT2SQL_PROMPT, ANSWER_PROMPT, REFLECT_SQL_PROMPT, GUARD_PROMPT, build_intent_prompt
 from core.lexicon import normalize_question
 from core.heuristics import refine_simple_filters, extract_recent_days, has_explicit_date, guess_single_table
 from core.config.loader import load_intents, load_tables
@@ -26,11 +24,40 @@ from core.config.loader import load_intents, load_tables
 logger = logging.getLogger("boe.graph")
 DEBUG_TRACE = os.getenv("DEBUG_TRACE", "0") == "1"
 
-llm = ChatOpenAI(model="Qwen/Qwen3-14B", temperature=0)
+LLM_MODEL = os.getenv("LLM_MODEL", "Qwen/Qwen3-14B")
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0"))
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "sk-no-key")
+
+_openai_client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 db = get_db_connection()
 
 MAX_DETAIL_ROWS = int(os.getenv("MAX_DETAIL_ROWS", "2000"))
 SAMPLE_LIMIT = int(os.getenv("SAMPLE_LIMIT", "200"))
+MAX_TABLE_ROWS = int(os.getenv("MAX_TABLE_ROWS", "200"))
+
+
+def _llm_complete(prompt: str, stream: bool = False) -> str:
+    """流式 LLM 调用"""
+    resp = _openai_client.chat.completions.create(
+        model=LLM_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=LLM_TEMPERATURE,
+        stream=stream,
+    )
+    if not stream:
+        return (resp.choices[0].message.content or "").strip()
+    
+    # 流式输出思维链
+    full_text = ""
+    print("\n[STREAMING]: ", end="", flush=True)
+    for chunk in resp:
+        if chunk.choices[0].delta.content:
+            text = chunk.choices[0].delta.content
+            print(text, end="", flush=True)
+            full_text += text
+    print("\n")
+    return full_text.strip()
 
 # ==========================================
 # 1. 定义状态总线 (加入 chat_history)
@@ -51,37 +78,84 @@ class GraphState(TypedDict):
     final_answer: str
     retry_count: int
     chart_data: dict # 🔴 存放可视化图表 JSON
+    table_data: list
+    table_columns: list
 
 # ==========================================
-# 2. 定义节点 (Nodes)
+# 2. 定义节点 (Nodes) - 注入思维链流式输出
 # ==========================================
 def node_get_schema(state: GraphState):
+    print("\n>>> [思维链] 正在动态加载相关表 Schema...")
     refined = state.get("refined_filters") or {}
     target_table = refined.get("table")
     
     # 策略 1: 如果意图识别直接给出了表名，优先加载该表
+    def _format_schema(table_names=None):
+        tables = load_tables()
+        if table_names:
+            tables = {k: v for k, v in tables.items() if k in table_names}
+        lines = []
+        for name, info in tables.items():
+            desc = info.get("description", "")
+            cols = info.get("columns", [])
+            lines.append(f"Table: {name}")
+            if desc:
+                lines.append(f"Description: {desc}")
+            if cols:
+                lines.append("Columns: " + ", ".join(cols))
+            lines.append("")
+        return "\n".join(lines).strip()
+
     if target_table:
-        logger.info(f"Loading schema for specific table: {target_table}")
-        schema = db.get_table_info(table_names=[target_table])
+        schema = _format_schema([target_table])
     else:
-        # 策略 2: 扫描问题，看看是否提到了表名关键字
         norm_q = (state.get("normalized_question") or state["question"]).lower()
         all_tables = list(load_tables().keys())
         hit_tables = [t for t in all_tables if t in norm_q]
-        
-        if hit_tables:
-            logger.info(f"Loading schema for matched tables: {hit_tables}")
-            schema = db.get_table_info(table_names=hit_tables)
-        else:
-            # 策略 3: 兜底全量加载
-            logger.info("No specific table identified, loading all target tables.")
-            schema = db.get_table_info()
-
-    if DEBUG_TRACE:
-        logger.info("table_schema_preview=%s", (schema[:1200] + "...") if len(schema) > 1200 else schema)
+        schema = _format_schema(hit_tables) if hit_tables else _format_schema()
     return {"table_schema": schema}
 
+def node_normalize_question(state: GraphState):
+    print("\n>>> [思维链] 正在标准化用户意图...")
+    normalized, hits = normalize_question(state["question"])
+    return {"normalized_question": normalized, "lexicon_hits": hits}
 
+def node_write_sql(state: GraphState):
+    print("\n>>> [思维链] 正在编写 SQL (包含业务逻辑注入)...")
+    retry_count = state.get("retry_count") or 0
+    history_list = state.get("chat_history", [])
+    history_text = "\n".join(history_list) if history_list else ""
+    enhanced_question = f"【前情提要】\n{history_text}\n\n【当前用户问题】\n{state.get('normalized_question') or state['question']}"
+    
+    prompt = TEXT2SQL_PROMPT.format(
+        table_schema=state["table_schema"],
+        question=enhanced_question
+    )
+    sql = _llm_complete(prompt, stream=True)
+    if sql.startswith("```sql"): sql = sql[6:]
+    if sql.startswith("```"): sql = sql[3:]
+    if sql.endswith("```"): sql = sql[:-3]
+    sql = sql.strip()
+    if ";" in sql:
+        sql = sql.split(";", 1)[0].strip()
+    return {"sql_query": sql, "retry_count": retry_count}
+
+def node_reflect_sql(state: GraphState):
+    print("\n>>> [思维链] SQL 报错，正在反思错误原因并尝试修复...")
+    retry_count = (state.get("retry_count") or 0) + 1
+    prompt = REFLECT_SQL_PROMPT.format(
+        question=state["question"],
+        table_schema=state["table_schema"],
+        sql_query=state["sql_query"],
+        error_message=state["sql_error"]
+    )
+    sql = _llm_complete(prompt, stream=True)
+    if sql.startswith("```sql"): sql = sql[6:]
+    if sql.startswith("```"): sql = sql[3:]
+    if sql.endswith("```"): sql = sql[:-3]
+    return {"sql_query": sql.strip(), "retry_count": retry_count, "sql_error": ""}
+
+# ... (后续函数实现 node_execute_sql, node_generate_answer, get_workflow 保持不变) ...
 def _extract_headers(sql: str):
     m = re.search(r"select\s+(.*?)\s+from\s", sql, re.IGNORECASE | re.DOTALL)
     if not m:
@@ -96,77 +170,121 @@ def _extract_headers(sql: str):
             headers.append(p.split(".")[-1].strip("` "))
     return headers
 
+def _extract_table_name(sql: str) -> str:
+    m = re.search(r"\bfrom\s+([`\"\[]?)([\w\.]+)\1", sql, re.IGNORECASE)
+    if not m:
+        return ""
+    raw = m.group(2)
+    return raw.split(".")[-1].strip("`\"[]")
+
+def _table_columns_from_config(table_name: str):
+    if not table_name:
+        return []
+    table = load_tables().get(table_name)
+    if not table:
+        return []
+    cols = table.get("columns", [])
+    names = []
+    for c in cols:
+        if isinstance(c, str):
+            name = c.split(" ")[0].strip()
+            if name:
+                names.append(name)
+    return names
+
+def _infer_headers(sql: str):
+    headers = _extract_headers(sql)
+    if not headers:
+        return []
+    if any(h == "*" or h.endswith(".*") for h in headers):
+        table_name = _extract_table_name(sql)
+        table_cols = _table_columns_from_config(table_name)
+        if table_cols:
+            return table_cols
+    return headers
 
 def _strip_limit(sql: str) -> str:
     return re.sub(r"\s+limit\s+\d+(\s*,\s*\d+)?\s*$", "", sql, flags=re.IGNORECASE).strip()
 
-def node_normalize_question(state: GraphState):
-    logger.info("--- [思维链] 正在进行问题归一化，处理业务黑话 ---")
-    normalized, hits = normalize_question(state["question"])
-    if DEBUG_TRACE:
-        logger.info("normalized_question=%s hits=%s", normalized, hits)
-    return {"normalized_question": normalized, "lexicon_hits": hits}
+def node_extract_intent(state: GraphState):
+    prompt_text = build_intent_prompt(load_intents(), list(load_tables().keys()))
+    prompt = prompt_text.format(question=state.get("normalized_question") or state["question"])
+    data = _safe_json_loads(_llm_complete(prompt))
+    intent = (data.get("intent") or "unknown").strip()
+    confidence = float(data.get("confidence") or 0.0)
+    filters = data.get("filters") or {}
+    return {
+        "intent": intent,
+        "intent_confidence": confidence,
+        "intent_filters": filters,
+    }
 
-def node_write_sql(state: GraphState):
-    logger.info("--- [思维链] 正在根据表结构和业务逻辑编写 SQL ---")
-    # 初始化/获取重试次数
-    retry_count = state.get("retry_count") or 0
-    
-    # 🔴 巧妙的技巧：把记忆拼在当前问题前面传给 LLM
-    history_list = state.get("chat_history", [])
-    if history_list:
-        history_text = "\n".join(history_list)
-        # 如果有记忆，就把上下文拼在一起
-        enhanced_question = f"【前情提要】\n{history_text}\n\n【当前用户问题】\n{state.get('normalized_question') or state['question']}"
-    else:
-        enhanced_question = state.get("normalized_question") or state["question"]
+def node_refine_filters(state: GraphState):
+    intent = state.get("intent")
+    filters = state.get("intent_filters") or {}
+    question = state.get("normalized_question") or state["question"]
+    recent_days = extract_recent_days(question)
+    if recent_days and not has_explicit_date(question):
+        filters = dict(filters)
+        filters.pop("date_from", None)
+        filters.pop("date_to", None)
+        filters["recent_days"] = recent_days
+    single_table = guess_single_table(question)
+    if single_table:
+        filters = dict(filters)
+        filters["table"] = single_table
+    if intent == "simple_table_query" or single_table:
+        refined = refine_simple_filters(question, filters)
+        return {"refined_filters": refined, "intent": "simple_table_query"}
+    return {"refined_filters": filters}
 
-    prompt = PromptTemplate.from_template(TEXT2SQL_PROMPT)
-    chain = prompt | llm
+def node_execute_sql(state: GraphState):
+    print("\n>>> [思维链] 正在执行 SQL...")
+    sql = state["sql_query"]
+    if not sql:
+        return {"db_result": "", "sql_error": state.get("sql_error") or "SQL 为空"}
+    try:
+        lower_sql = sql.lower()
+        is_select = lower_sql.strip().startswith("select") or lower_sql.strip().startswith("with")
+        is_aggregate = (" group by " in lower_sql) or any(k in lower_sql for k in ("count(", "sum(", "avg(", "min(", "max("))
+        row_count = None
+        truncated = False
+        if is_select and not is_aggregate:
+            base_sql = _strip_limit(sql)
+            count_sql = f"SELECT COUNT(*) FROM ({base_sql}) AS subq"
+            try:
+                count_res = db.run(count_sql)
+                if count_res and isinstance(count_res[0], (list, tuple)):
+                    row_count = int(count_res[0][0])
+            except Exception:
+                row_count = None
+            if row_count is not None and row_count > MAX_DETAIL_ROWS and " limit " not in lower_sql:
+                sql = f"{sql} LIMIT {SAMPLE_LIMIT}"
+                truncated = True
+        
+        result = db.run(sql)
+        
+        # 确保 result 是列表格式，元素是 tuple
+        formatted_result = []
+        if isinstance(result, list):
+            for r in result:
+                if isinstance(r, (list, tuple)):
+                    formatted_result.append(tuple(r))
+                else:
+                    formatted_result.append((r,))
+        
+        columns = _extract_headers(sql)
+        return {
+            "db_result": formatted_result,
+            "sql_error": "",
+            "row_count": row_count,
+            "truncated": truncated,
+            "columns": columns,
+        }
+    except Exception as e:
+        logger.error(f"SQL Execution Error: {e}")
+        return {"db_result": [], "sql_error": str(e)}
 
-    response = chain.invoke({
-        "table_schema": state["table_schema"],
-        "question": enhanced_question # 传入带记忆的问题
-    }, config={"callbacks": [StdOutCallbackHandler()]})
-
-    sql = response.content.strip()
-    if sql.startswith("```sql"): sql = sql[6:]
-    if sql.startswith("```"): sql = sql[3:]
-    if sql.endswith("```"): sql = sql[:-3]
-    sql = sql.strip()
-    # 只取第一条语句，避免多语句执行
-    if ";" in sql:
-        sql = sql.split(";", 1)[0].strip()
-    # 仅允许 SELECT/CTE 查询
-    lower = sql.lower()
-    if not (lower.startswith("select") or lower.startswith("with")):
-        return {"sql_query": "", "sql_error": "仅允许只读 SELECT 查询。", "retry_count": retry_count}
-    
-    # 不再在此强制加 LIMIT 200，交给 execute_sql 节点的动态截断逻辑处理
-    return {"sql_query": sql, "retry_count": retry_count}
-
-def node_reflect_sql(state: GraphState):
-    """SQL 纠错节点"""
-    logger.info("--- [思维链] 发现 SQL 报错，正在反思原因并尝试修复 ---")
-    retry_count = (state.get("retry_count") or 0) + 1
-    logger.warning(f"Reflecting on SQL error (Retry #{retry_count}): {state['sql_error']}")
-    
-    prompt = PromptTemplate.from_template(REFLECT_SQL_PROMPT)
-    chain = prompt | llm
-
-    response = chain.invoke({
-        "question": state["question"],
-        "table_schema": state["table_schema"],
-        "sql_query": state["sql_query"],
-        "error_message": state["sql_error"]
-    })
-
-    sql = response.content.strip()
-    if sql.startswith("```sql"): sql = sql[6:]
-    if sql.startswith("```"): sql = sql[3:]
-    if sql.endswith("```"): sql = sql[:-3]
-    
-    return {"sql_query": sql.strip(), "retry_count": retry_count, "sql_error": ""}
 
 def _safe_json_loads(text: str) -> dict:
     raw = text.strip()
@@ -184,90 +302,22 @@ def _safe_json_loads(text: str) -> dict:
                 return {}
         return {}
 
-def node_extract_intent(state: GraphState):
-    prompt_text = build_intent_prompt(load_intents(), list(load_tables().keys()))
-    prompt = PromptTemplate.from_template(prompt_text)
-    chain = prompt | llm
-    response = chain.invoke({"question": state.get("normalized_question") or state["question"]})
-    data = _safe_json_loads(response.content)
-    intent = (data.get("intent") or "unknown").strip()
-    confidence = float(data.get("confidence") or 0.0)
-    filters = data.get("filters") or {}
-    return {
-        "intent": intent,
-        "intent_confidence": confidence,
-        "intent_filters": filters,
-    }
-
-def node_refine_filters(state: GraphState):
-    intent = state.get("intent")
-    filters = state.get("intent_filters") or {}
-    question = state.get("normalized_question") or state["question"]
-
-    # If user says "最近N天" and didn't specify explicit dates, override model dates.
-    recent_days = extract_recent_days(question)
-    if recent_days and not has_explicit_date(question):
-        filters = dict(filters)
-        filters.pop("date_from", None)
-        filters.pop("date_to", None)
-        filters["recent_days"] = recent_days
-
-    single_table = guess_single_table(question)
-    if single_table:
-        filters = dict(filters)
-        filters["table"] = single_table
-
-    if intent == "simple_table_query" or single_table:
-        refined = refine_simple_filters(question, filters)
-        return {"refined_filters": refined, "intent": "simple_table_query"}
-    return {"refined_filters": filters}
-
-def node_execute_sql(state: GraphState):
-    logger.info("--- [思维链] 正在数据库执行生成的 SQL ---")
-    sql = state["sql_query"]
-    if not sql:
-        return {"db_result": "", "sql_error": state.get("sql_error") or "SQL 为空"}
-    try:
-        logger.info("final_sql=%s", sql)
-        lower_sql = sql.lower()
-        is_select = lower_sql.strip().startswith("select") or lower_sql.strip().startswith("with")
-        is_aggregate = (" group by " in lower_sql) or any(k in lower_sql for k in ("count(", "sum(", "avg(", "min(", "max("))
-
-        row_count = None
-        truncated = False
-        if is_select and not is_aggregate:
-            base_sql = _strip_limit(sql)
-            count_sql = f"SELECT COUNT(*) FROM ({base_sql}) AS subq"
-            try:
-                count_res = db.run(count_sql)
-                if isinstance(count_res, list) and count_res and isinstance(count_res[0], tuple):
-                    row_count = int(count_res[0][0])
-            except Exception:
-                row_count = None
-
-            if row_count is not None and row_count > MAX_DETAIL_ROWS and " limit " not in lower_sql:
-                sql = f"{sql} LIMIT {SAMPLE_LIMIT}"
-                truncated = True
-
-        result = db.run(sql)
-        # 🔴 添加日志：输出查询到的原始结果
-        logger.info(f"raw_db_result: {str(result)[:500]}...") 
-        
-        result_len = len(result) if isinstance(result, str) else None
-        columns = _extract_headers(sql)
-        return {
-            "db_result": result,
-            "sql_error": "",
-            "db_result_len": result_len,
-            "row_count": row_count,
-            "truncated": truncated,
-            "columns": columns,
-        }
-    except Exception as e:
-        logger.error(f"--- [思维链] SQL 执行报错: {str(e)} ---")
-        return {"db_result": "", "sql_error": str(e)}
+def node_check_guard(state: GraphState):
+    print("\n>>> [思维链] 正在进行安全合规检查...")
+    prompt = GUARD_PROMPT.format(question=state["question"])
+    decision = _llm_complete(prompt)
+    if "REJECT" in decision:
+        return {"intent": "REJECT"}
+    return {"intent": state["intent"]}
 
 def node_generate_answer(state: GraphState):
+    print("\n>>> [思维链] 正在生成专业回答...")
+    if state.get("intent") == "REJECT":
+        answer = "抱歉，作为 BOE 生产辅助驾驶系统，我仅支持处理生产制造相关的业务数据查询。请问有什么业务需求需要我协助吗？"
+        return {
+            "final_answer": answer,
+            "chat_history": [f"问: {state['question']}\n答: {answer}"]
+        }
     if state.get("sql_error"):
         answer = f"⚠️ 数据库查询出错：\n{state['sql_error']}"
         return {
@@ -275,130 +325,88 @@ def node_generate_answer(state: GraphState):
             "chat_history": [f"问: {state['question']}\n答: {answer}"]
         }
 
-    db_result = state.get("db_result")
+    db_result = state.get("db_result", [])
     sql_query = state.get("sql_query", "")
-    
-    # 使用 Pandas 自动化分析
-    df = None
+    columns = state.get("columns", [])
+
+    # 使用 pandas 构建 DataFrame
+    if db_result and columns:
+        df = pd.DataFrame(db_result, columns=columns)
+    elif db_result:
+        df = pd.DataFrame(db_result)
+    else:
+        df = pd.DataFrame()
+
     summary_text = ""
     chart_json = None
     
-    if isinstance(db_result, list) and db_result:
-        headers = state.get("columns") or _extract_headers(sql_query)
-        if headers and len(headers) == len(db_result[0]):
-            df = pd.DataFrame(db_result, columns=headers)
-            
-            # --- 可视化决策引擎 ---
-            try:
-                # 如果有 GROUP BY 且有数值列，自动生成图表
-                num_cols = df.select_dtypes(include=['number']).columns.tolist()
-                cat_cols = df.select_dtypes(include=['object']).columns.tolist()
-                
-                if len(cat_cols) >= 1 and len(num_cols) >= 1 and len(df) > 1:
-                    # 优先选第一个分类字段和第一个数值字段绘图
-                    # 如果分类字段是日期，画折线图；否则画柱状图
-                    x_col = cat_cols[0]
-                    y_col = num_cols[0]
-                    
-                    if "date" in x_col.lower() or "month" in x_col.lower():
-                        fig = px.line(df, x=x_col, y=y_col, title=f"{y_col} 变化趋势", markers=True)
-                    else:
-                        fig = px.bar(df, x=x_col, y=y_col, title=f"各 {x_col} 的 {y_col} 分布", color=x_col)
-                    
-                    chart_json = fig.to_json()
-            except Exception as e:
-                logger.warning(f"Failed to generate chart: {e}")
+    if not df.empty:
+        total_count = len(df)
+        summary_text = f"查询结果共 {total_count} 条记录。"
+        # 补充数值列统计
+        numeric_cols = df.select_dtypes(include=['number']).columns
+        if not numeric_cols.empty:
+            summary_text += f" 关键指标汇总: {df[numeric_cols].sum().to_dict()}"
 
-            # --- 智能统计摘要 ---
-            if len(df) > 30:
-                summary_parts = []
-                summary_parts.append(f"数据总量: {len(df)} 条记录。")
-                for col in df.columns:
-                    if df[col].dtype == "object" or any(k in col.lower() for k in ["code", "name", "process"]):
-                        v_counts = df[col].value_counts().head(5).to_dict()
-                        if len(v_counts) > 1:
-                            summary_parts.append(f"- {col} 分布: {v_counts}")
-                    if any(k in col.lower() for k in ["qty", "amount", "rate", "yield"]):
-                        summary_parts.append(f"- {col} 汇总: 总计={df[col].sum():.2f}, 平均={df[col].mean():.2f}")
-                summary_text = "\n".join(summary_parts)
-
-    # 给大模型看前 20 行预览
-    if df is not None and not df.empty:
-        # 🔴 关键修复：将 DataFrame 中的所有 Decimal 转换为 float，确保 JSON 序列化完美
-        import decimal
-        df_json = df.copy()
-        for col in df_json.select_dtypes(include=['object', 'float', 'int']).columns:
-             # 如果该列包含 Decimal 类型，转换为 float
-             if df_json[col].apply(lambda x: isinstance(x, decimal.Decimal)).any():
-                 df_json[col] = df_json[col].apply(lambda x: float(x) if isinstance(x, decimal.Decimal) else x)
-        
-        db_preview = df_json.head(20).to_json(orient="records", force_ascii=False)
+        # 预览数据（限制前 20 行给 LLM）
+        db_preview = df.head(20).to_json(orient="records", force_ascii=False)
+        table_data = df.to_dict(orient="records")
     else:
-        db_preview = "[] (当前查询在数据库中未找到任何匹配记录)"
+        db_preview = "[]"
+        table_data = []
+        summary_text = "未查询到数据。"
 
-    prompt = PromptTemplate.from_template(ANSWER_PROMPT)
-    chain = prompt | llm
-
-    response = chain.invoke({
-        "question": state["question"],
-        "sql_query": sql_query,
-        "db_result": db_preview,
-        "data_summary": summary_text
-    }, config={"callbacks": [StdOutCallbackHandler()]})
-
-    answer = response.content
-    
-    # 最终结果展示
-    full_table = ""
-    if df is not None and not df.empty:
-        full_table = "\n\n" + df.to_markdown(index=False)
-    
-    final_output = answer + full_table
+    prompt = ANSWER_PROMPT.format(
+        question=state["question"],
+        sql_query=sql_query,
+        db_result=db_preview,
+        data_summary=summary_text
+    )
+    answer = _llm_complete(prompt)
 
     return {
-        "final_answer": final_output,
-        "chart_data": chart_json, # 传给前端渲染
+        "final_answer": answer,
+        "chart_data": chart_json,
+        "table_data": table_data,
+        "table_columns": columns,
         "chat_history": [f"问: {state['question']}\n答: {answer}"]
     }
 
-# ==========================================
-# 3. 编排工作流 (Compile Graph)
-# ==========================================
+
 def get_workflow():
     workflow = StateGraph(GraphState)
-
     workflow.add_node("normalize_question", node_normalize_question)
     workflow.add_node("extract_intent", node_extract_intent)
+    workflow.add_node("check_guard", node_check_guard)
     workflow.add_node("refine_filters", node_refine_filters)
     workflow.add_node("get_schema", node_get_schema)
     workflow.add_node("write_sql", node_write_sql)
     workflow.add_node("execute_sql", node_execute_sql)
     workflow.add_node("reflect_sql", node_reflect_sql)
     workflow.add_node("generate_answer", node_generate_answer)
-
     workflow.set_entry_point("normalize_question")
     workflow.add_edge("normalize_question", "extract_intent")
-    workflow.add_edge("extract_intent", "refine_filters")
+    workflow.add_edge("extract_intent", "check_guard")
+
+    def route_after_guard(state: GraphState):
+        if state.get("intent") == "REJECT":
+            return "generate_answer"
+        return "refine_filters"
+
+    workflow.add_conditional_edges("check_guard", route_after_guard, {
+        "generate_answer": "generate_answer",
+        "refine_filters": "refine_filters"
+    })
+
     workflow.add_edge("refine_filters", "get_schema")
     workflow.add_edge("get_schema", "write_sql")
     workflow.add_edge("write_sql", "execute_sql")
-
-    # 🔴 核心：条件路由
     def route_after_execute(state: GraphState):
         if state.get("sql_error") and (state.get("retry_count") or 0) < 3:
             return "reflect_sql"
         return "generate_answer"
-
-    workflow.add_conditional_edges(
-        "execute_sql",
-        route_after_execute,
-        {
-            "reflect_sql": "reflect_sql",
-            "generate_answer": "generate_answer"
-        }
-    )
-
-    workflow.add_edge("reflect_sql", "execute_sql") # 反思后重试执行
+    workflow.add_conditional_edges("execute_sql", route_after_execute, {"reflect_sql": "reflect_sql", "generate_answer": "generate_answer"})
+    workflow.add_edge("reflect_sql", "execute_sql")
     workflow.add_edge("generate_answer", END)
-
     return workflow
+

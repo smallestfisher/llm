@@ -79,9 +79,8 @@ def run_db_insertion():
         ]
         for t in table_order:
             try:
-                cursor.execute(f"TRUNCATE TABLE `{t}`")
+                cursor.execute(f"DROP TABLE IF EXISTS `{t}`")
             except Exception:
-                # 表不存在时忽略，后续会创建
                 pass
 
         # ==========================================
@@ -100,7 +99,6 @@ def run_db_insertion():
           PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='V版需求表';
         """)
-        cursor.execute("TRUNCATE TABLE `v_demand`") # 保证可重复运行
         data = []
         for i in range(1200):
             dt = random_date(start_dt, end_dt)
@@ -124,7 +122,6 @@ def run_db_insertion():
           PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='P版需求表';
         """)
-        cursor.execute("TRUNCATE TABLE `p_demand`")
         data = []
         for i in range(1200):
             dt = random_date(start_dt, end_dt)
@@ -148,7 +145,6 @@ def run_db_insertion():
           PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='审批版月计划';
         """)
-        cursor.execute("TRUNCATE TABLE `monthly_plan_approved`")
         data = []
         for i in range(1050):
             dt = random_date(start_dt, end_dt)
@@ -174,7 +170,6 @@ def run_db_insertion():
           PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='周别月计划';
         """)
-        cursor.execute("TRUNCATE TABLE `weekly_rolling_plan`")
         data = []
         for i in range(1200):
             dt = random_date(start_dt, end_dt)
@@ -199,7 +194,6 @@ def run_db_insertion():
           PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Daily计划';
         """)
-        cursor.execute("TRUNCATE TABLE `daily_schedule`")
         data = []
         for i in range(1500):
             dt = random_date(start_dt, end_dt).strftime('%Y-%m-%d')
@@ -219,18 +213,19 @@ def run_db_insertion():
           `factory_code` VARCHAR(50) COMMENT '厂区',
           `product_code` VARCHAR(50) NOT NULL COMMENT '料号',
           `current_process` VARCHAR(50) COMMENT '当前所在工序',
+          `process_entry_time` DATETIME COMMENT '入站时间',
           `wip_qty` INT NOT NULL COMMENT '滞留数量',
+          `priority` INT COMMENT '优先级(1-5)',
           `hold_flag` TINYINT(1) COMMENT '是否冻结(0/1)',
           `update_time` DATETIME COMMENT '更新时间',
           PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='WIP表';
         """)
-        cursor.execute("TRUNCATE TABLE `work_in_progress`")
         data = []
         for i in range(1200):
             dt = random_date(start_dt, end_dt).strftime('%Y-%m-%d %H:%M:%S')
-            data.append((f"LOT_{random.randint(100000,999999)}", random.choice(FACTORIES), random.choice(PRODUCT_CODES), random.choice(PROCESSES), random.randint(100, 5000), random.choice([0,0,0,1]), dt))
-        cursor.executemany("INSERT INTO `work_in_progress` (`lot_id`, `factory_code`, `product_code`, `current_process`, `wip_qty`, `hold_flag`, `update_time`) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+            data.append((f"LOT_{random.randint(100000,999999)}", random.choice(FACTORIES), random.choice(PRODUCT_CODES), random.choice(PROCESSES), dt, random.randint(100, 5000), random.randint(1,5), random.choice([0,0,0,1]), dt))
+        cursor.executemany("INSERT INTO `work_in_progress` (`lot_id`, `factory_code`, `product_code`, `current_process`, `process_entry_time`, `wip_qty`, `priority`, `hold_flag`, `update_time`) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)", data)
         print(" OK (1200 rows)")
 
         # ==========================================
@@ -249,7 +244,6 @@ def run_db_insertion():
           PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Daily库存表';
         """)
-        cursor.execute("TRUNCATE TABLE `daily_inventory`")
         data = []
         for i in range(1200):
             dt = random_date(start_dt, end_dt).strftime('%Y-%m-%d')
@@ -273,7 +267,6 @@ def run_db_insertion():
           PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='OMS全渠道库存';
         """)
-        cursor.execute("TRUNCATE TABLE `oms_inventory`")
         data = []
         for i in range(1100):
             dt = random_date(start_dt, end_dt).strftime('%Y-%m-%d')
@@ -294,11 +287,12 @@ def run_db_insertion():
           `input_qty` INT NOT NULL COMMENT '投料数',
           `output_qty` INT NOT NULL COMMENT '良品产出数',
           `defect_qty` INT NOT NULL COMMENT '不良品数',
+          `defect_type_code` VARCHAR(20) COMMENT '不良类型',
+          `downtime_hours` DECIMAL(5,2) COMMENT '停机时长(H)',
           `yield_rate` DECIMAL(5,2) NOT NULL COMMENT '良率(%)',
           PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='生产实绩表';
         """)
-        cursor.execute("TRUNCATE TABLE `production_actuals`")
         data = []
         for i in range(1500):
             dt = random_date(start_dt, end_dt).strftime('%Y-%m-%d')
@@ -307,8 +301,8 @@ def run_db_insertion():
             output_q = int(input_q * (yield_r / 100))
             defect_q = input_q - output_q
             line = f"{random.choice(PROCESSES)}_L{random.randint(1,5)}"
-            data.append((dt, line, random.choice(PRODUCT_CODES), input_q, output_q, defect_q, round(yield_r, 2)))
-        cursor.executemany("INSERT INTO `production_actuals` (`work_date`, `line_code`, `product_code`, `input_qty`, `output_qty`, `defect_qty`, `yield_rate`) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+            data.append((dt, line, random.choice(PRODUCT_CODES), input_q, output_q, defect_q, random.choice(['Mura', 'Particle', 'Scratch', 'None']), round(random.uniform(0, 4), 2), round(yield_r, 2)))
+        cursor.executemany("INSERT INTO `production_actuals` (`work_date`, `line_code`, `product_code`, `input_qty`, `output_qty`, `defect_qty`, `defect_type_code`, `downtime_hours`, `yield_rate`) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)", data)
         print(" OK (1500 rows)")
 
         # ==========================================
@@ -326,7 +320,6 @@ def run_db_insertion():
           PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='产品匹配表';
         """)
-        cursor.execute("TRUNCATE TABLE `product_mapping`")
         data = []
         for code in PRODUCT_CODES:
             data.append((code, random.choice(GLASS_SIZES), random.choice([2, 6, 18, 32, 65, 200]), random.choice(FACTORIES), random.choice(FACTORIES)))
@@ -349,7 +342,6 @@ def run_db_insertion():
           PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='产品特性表';
         """)
-        cursor.execute("TRUNCATE TABLE `product_attributes`")
         data = []
         for code in PRODUCT_CODES:
             data.append((code, random.choice(TECH_TYPES), random.choice(APPS), random.randint(15, 45), random.choice([1000, 5000, 10000]), random.choice(LIFECYCLES)))
@@ -372,7 +364,6 @@ def run_db_insertion():
           PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='销售与财务业绩表';
         """)
-        cursor.execute("TRUNCATE TABLE `sales_financial_perf`")
         data = []
         for i in range(1200):
             dt = random_date(start_dt, end_dt)
