@@ -7,7 +7,7 @@ def hash_password(password: str) -> str:
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
-def add_user(username, password, role="user"):
+def add_user(username, password):
     db = SessionLocal()
     if db.query(User).filter(User.username == username).first():
         print(f"❌ 用户 {username} 已存在！")
@@ -16,11 +16,10 @@ def add_user(username, password, role="user"):
     new_user = User(
         username=username,
         password_hash=hash_password(password),
-        role=role
     )
     db.add(new_user)
     db.commit()
-    print(f"✅ 成功添加用户: {username} (角色: {role})")
+    print(f"✅ 成功添加用户: {username}")
     db.close()
 
 def delete_user(username):
@@ -40,7 +39,7 @@ def list_users():
     users = db.query(User).all()
     print("\n=== 当前用户列表 ===")
     for u in users:
-        print(f"ID: {u.id} | 用户名: {u.username} | 角色: {u.role}")
+        print(f"ID: {u.id} | 用户名: {u.username}")
     print("====================\n")
     db.close()
 
@@ -54,8 +53,7 @@ if __name__ == "__main__":
     if action == "add":
         u = input("请输入新用户名: ")
         p = input("请输入新密码: ")
-        r = input("请输入角色(直接回车默认user, 可选admin): ") or "user"
-        add_user(u, p, r)
+        add_user(u, p)
     elif action == "delete":
         u = input("请输入要删除的用户名: ")
         delete_user(u)

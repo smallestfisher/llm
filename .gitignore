@@ -1,0 +1,28 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Environment files
+.env
+.venv/
+venv/
+
+# Local tool state
+.chainlit/
+.claude/
+.codex/
+.files/
+
+# Runtime databases and checkpoints
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Local semantic cache artifacts
+core/config/semantic_db/
+
+# OS/editor noise
+.DS_Store

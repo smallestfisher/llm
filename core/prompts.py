@@ -80,11 +80,21 @@ GUARD_PROMPT = """你是一个生产制造系统的安全守卫。
 
 
 
-def build_intent_prompt(intent_items, table_names) -> str:
-    intent_lines = "\n".join([f"- {it['id']}: {it['desc']}" for it in intent_items])
+def build_query_parse_prompt(intent_items, table_names) -> str:
+    def _format_intent(item) -> str:
+        aliases = "、".join(item.get("aliases") or []) or "无"
+        examples = "；".join(item.get("examples") or []) or "无"
+        return f"- {item['id']}: {item['desc']}\n  aliases: {aliases}\n  examples: {examples}"
+
+    intent_lines = "\n".join([_format_intent(it) for it in intent_items])
     table_lines = "\n".join([f"- {t}" for t in table_names])
-    raw = f"""你是制造业生产计划员的查询解析器。
-请从用户问题中识别最匹配的查询意图，并抽取查询条件。
+    raw = f"""你是制造业生产数据查询解析器。
+请基于用户原问题和规则归一化结果，完成以下任务：
+1. 理解用户真实业务语义，不要拘泥于字面表达。
+2. 产出更标准的 normalized_question，保留原始业务含义，不要改写成 SQL 片段。
+3. 识别最匹配的 intent。
+4. 抽取 filters。
+
 你只能输出 JSON，不要输出其它文字。
 
 候选意图：
@@ -95,6 +105,7 @@ def build_intent_prompt(intent_items, table_names) -> str:
 
 输出 JSON 结构：
 {{
+  "normalized_question": "...",
   "intent": "...",
   "confidence": 0.0,
   "filters": {{
@@ -111,6 +122,7 @@ def build_intent_prompt(intent_items, table_names) -> str:
     "month_to": "YYYY-MM",
     "date_from": "YYYY-MM-DD",
     "date_to": "YYYY-MM-DD",
+    "recent_days": 7,
     "latest": true,
     "table": "table_name",
     "group_by": ["field1", "field2"],
@@ -119,12 +131,18 @@ def build_intent_prompt(intent_items, table_names) -> str:
   }}
 }}
 
-如果无法匹配意图，intent 设为 "unknown"，confidence 设为 0。
-如果用户表达“最新/最近一期”，请设置 filters.latest = true。
-如果用户表达“最近N天/近N天”，请设置 filters.recent_days = N，不要伪造 date_from/date_to。
-不要使用占位符（如 YYYY-MM / YYYY-MM-DD），除非用户明确给出具体日期或月份。
-用户问题：__QUESTION__
+规则：
+1. 如果规则归一化结果明显更标准，可以在此基础上继续润色。
+2. normalized_question 必须是自然语言表达，不要输出字段名替换后的 SQL 化文本。
+3. 如果无法匹配意图，intent 设为 "unknown"，confidence 设为 0。
+4. 如果用户表达“最新/最近一期”，设置 filters.latest = true。
+5. 如果用户表达“最近N天/近N天”，设置 filters.recent_days = N，不要伪造 date_from/date_to。
+6. 不要使用占位符日期，除非用户明确给出具体日期或月份。
+7. filters 中不要编造不存在的值。
+
+用户原问题：__QUESTION__
+规则归一化结果：__RULE_NORMALIZED__
 """
-    # Escape braces for .format, then restore the question placeholder.
     raw = raw.replace("{", "{{").replace("}", "}}")
-    return raw.replace("__QUESTION__", "{question}")
+    raw = raw.replace("__QUESTION__", "{question}")
+    return raw.replace("__RULE_NORMALIZED__", "{rule_normalized_question}")

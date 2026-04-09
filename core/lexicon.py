@@ -1,34 +1,36 @@
-# 核心业务术语映射
-# 格式: "用户口语/模糊术语": ["标准字段/逻辑表达"]
-LEXICON_MAP = {
-    # 产出与良率
-    "产出": "output_qty",
-    "良率": "yield_rate",
-    "不良率": "(100 - yield_rate)",
-    "产线情况": "input_qty, output_qty, yield_rate",
-    
-    # 异常与停机
-    "停线": "downtime_hours > 0",
-    "异常": "defect_qty > 0 OR downtime_hours > 0",
-    "瓶颈": "priority >= 4 AND process_entry_time < DATE_SUB(NOW(), INTERVAL 12 HOUR)",
-    "积压": "wip_qty > 1000",
-    "不良": "defect_type_code",
-    
-    # 计划与需求
-    "齐套": "available_qty + in_transit_qty",
-    "紧急": "priority = 5 OR status = 'Urgent'",
-    "任务": "target_qty",
-    
-    # 时间缩写
-    "上周": "WEEK(work_date) = WEEK(NOW()) - 1",
-    "本月": "DATE_FORMAT(work_date, '%Y-%m') = DATE_FORMAT(NOW(), '%Y-%m')",
+CANONICAL_TERM_ALIASES = {
+    "产出": ["产量", "产出量", "实际产出", "实际产量"],
+    "良率": ["直通率", "合格率"],
+    "不良率": ["坏品率", "缺陷率"],
+    "异常": ["风险", "告警", "预警", "问题"],
+    "停线": ["停机", "停产", "线停"],
+    "瓶颈": ["卡点", "堵点"],
+    "积压": ["堆积", "压货"],
+    "在制品": ["wip", "在制"],
+    "库存": ["在库", "存货"],
+    "排产": ["计划排产", "排程"],
+    "需求": ["需求量", "要货", "forecast"],
+    "承诺产能": ["承诺", "产能承诺"],
+    "周计划": ["周排产", "周安排"],
+    "日计划": ["日排产", "日安排"],
+    "实绩": ["实际", "达成", "完成情况"],
 }
 
+
 def normalize_question(question: str):
-    """对用户问题中的口语进行标准化替换，并返回匹配的词条列表"""
+    """对高频业务别名做轻量归一化，返回归一化后的问句和命中的别名信息。"""
+    normalized = question
     hits = []
-    for colloquial, formal in LEXICON_MAP.items():
-        if colloquial in question:
-            hits.append(colloquial)
-            question = question.replace(colloquial, formal)
-    return question, hits
+
+    alias_pairs = []
+    for canonical, aliases in CANONICAL_TERM_ALIASES.items():
+        for alias in aliases:
+            alias_pairs.append((alias, canonical))
+
+    # 长词优先，避免短词提前替换影响命中。
+    for alias, canonical in sorted(alias_pairs, key=lambda item: len(item[0]), reverse=True):
+        if alias in normalized:
+            hits.append({"alias": alias, "canonical": canonical})
+            normalized = normalized.replace(alias, canonical)
+
+    return normalized, hits

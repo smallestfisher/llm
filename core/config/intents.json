@@ -1,13 +1,68 @@
 [
-  {"id": "demand_capacity_monthly", "desc": "需求预测 vs 承诺产能 vs 月计划"},
-  {"id": "weekly_daily_actuals", "desc": "周计划 vs 日计划 vs 实绩"},
-  {"id": "inventory_schedule_wip", "desc": "库存可用性 vs 排产 vs 在制品"},
-  {"id": "customer_demand_inventory", "desc": "客户需求 vs 客户侧库存/在途"},
-  {"id": "lifecycle_plan", "desc": "生命周期/应用/技术族与计划关系"},
-  {"id": "line_yield_vs_schedule", "desc": "产线良率/产出 vs 排产"},
-  {"id": "weekly_adjust_reason", "desc": "周计划调整原因统计"},
-  {"id": "sales_vs_plan", "desc": "产销与收入 vs 计划"},
-  {"id": "product_factory_mapping", "desc": "产品与推荐工厂/切割效率"},
-  {"id": "demand_commit_rate", "desc": "预测需求与承诺满足率"},
-  {"id": "simple_table_query", "desc": "单表明细/统计查询"}
+  {
+    "id": "demand_capacity_monthly",
+    "desc": "需求预测 vs 承诺产能 vs 月计划",
+    "aliases": ["月度需求产能对比", "forecast与承诺产能", "月需求和月计划", "月需求达成"],
+    "examples": ["下个月各产品需求预测和承诺产能差多少", "按月看 forecast、commit 和月计划对比", "本月需求和承诺产能缺口有哪些"]
+  },
+  {
+    "id": "weekly_daily_actuals",
+    "desc": "周计划 vs 日计划 vs 实绩",
+    "aliases": ["周计划与实绩", "日计划达成", "周排产对比实际", "计划兑现"],
+    "examples": ["这周周计划和每天实绩差异是多少", "按产线看日计划和实际产出对比", "本周计划兑现率怎么样"]
+  },
+  {
+    "id": "inventory_schedule_wip",
+    "desc": "库存可用性 vs 排产 vs 在制品",
+    "aliases": ["库存排产在制", "齐套与在制", "库存够不够排产", "wip和库存"],
+    "examples": ["库存和在制能否支撑本周排产", "按产品看可用库存、在途和在制品", "哪些料库存不足影响排产"]
+  },
+  {
+    "id": "customer_demand_inventory",
+    "desc": "客户需求 vs 客户侧库存/在途",
+    "aliases": ["客户端库存", "客户需求覆盖", "在途与客户需求", "客户缺货风险"],
+    "examples": ["客户需求和客户端库存是否匹配", "哪些客户未来两周有缺货风险", "按客户看需求、库存和在途覆盖天数"]
+  },
+  {
+    "id": "lifecycle_plan",
+    "desc": "生命周期/应用/技术族与计划关系",
+    "aliases": ["生命周期和计划", "应用技术族计划", "产品阶段分布", "tech family计划"],
+    "examples": ["不同生命周期产品的计划量分布", "按应用和技术族看月计划", "EOL 产品还有哪些排产计划"]
+  },
+  {
+    "id": "line_yield_vs_schedule",
+    "desc": "产线良率/产出 vs 排产",
+    "aliases": ["产线良率排产", "线体达成", "产线效率", "良率与计划"],
+    "examples": ["哪些产线良率影响排产达成", "按线别看产出、良率和排产差异", "良率低导致计划未完成的产线有哪些"]
+  },
+  {
+    "id": "weekly_adjust_reason",
+    "desc": "周计划调整原因统计",
+    "aliases": ["周计划调整分析", "调整原因分布", "周排产变更原因", "改计划原因"],
+    "examples": ["本周计划调整的主要原因是什么", "按工厂统计周计划变更原因", "哪些原因导致周计划多次调整"]
+  },
+  {
+    "id": "sales_vs_plan",
+    "desc": "产销与收入 vs 计划",
+    "aliases": ["产销计划对比", "收入达成", "销售与计划", "出货和收入"],
+    "examples": ["本月产销和收入对计划的达成情况", "按产品看销售、出货和计划差异", "哪些产品收入未达计划"]
+  },
+  {
+    "id": "product_factory_mapping",
+    "desc": "产品与推荐工厂/切割效率",
+    "aliases": ["产品工厂匹配", "推荐工厂", "切割效率", "产品工厂对应关系"],
+    "examples": ["某产品推荐在哪个工厂生产", "按产品看推荐工厂和切割效率", "哪些产品存在跨厂生产但效率较低"]
+  },
+  {
+    "id": "demand_commit_rate",
+    "desc": "预测需求与承诺满足率",
+    "aliases": ["需求满足率", "commit rate", "承诺达成率", "需求承诺覆盖"],
+    "examples": ["未来三个月需求满足率是多少", "哪些产品承诺满足率低于 90%", "按客户看 forecast 和 commit 覆盖率"]
+  },
+  {
+    "id": "simple_table_query",
+    "desc": "单表明细/统计查询",
+    "aliases": ["单表查询", "明细查询", "简单统计", "列表导出"],
+    "examples": ["查询某张表最近 7 天明细", "统计某表按工厂数量分布", "导出某表指定产品的数据"]
+  }
 ]

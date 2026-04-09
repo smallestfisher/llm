@@ -1,15 +1,24 @@
 # BOE Data Copilot (V2.0 生产级架构文档)
 
 ## 1. 系统架构
-本项目采用 **意图驱动 (Intent-Driven) 的 Agentic 工作流**。系统核心基于 `langgraph` 构建，实现从自然语言到数据洞察的自动化闭环。
+本项目采用意图驱动的 Agentic 工作流。系统核心基于 `langgraph` 构建，通过统一语义解析、SQL 生成与结果解读，实现从自然语言到数据洞察的自动化闭环。
 
 ### 核心处理链路
-1.  **Normalization (标准化)**: 使用 `core/lexicon.py` 进行业务口语归一化（如：“产出” -> `output_qty`）。
-2.  **Intent Analysis (意图识别)**: 识别查询意图与筛选器（`core/graph.py` -> `extract_intent`）。
-3.  **Dynamic Schema Loading (动态加载)**: 根据意图动态加载 `core/config/tables.json` 中的相关表元数据，降低 Token 噪声。
-4.  **SQL Generation (SQL 生成)**: 利用思维链 (CoT) 注入业务约束，生成标准 MySQL 8.0 SQL。
-5.  **Self-Correction (纠错反思)**: 具备 `reflect_sql` 节点，当 SQL 执行失败时，自动解析报错并重写。
-6.  **Insight Generation (洞察生成)**: 集成 Pandas 进行数据分析，并支持 Plotly 可视化展示。
+1. **Query Parsing (统一语义解析)**: `core/graph.py` 中的 `parse_query` 节点先调用 `core/lexicon.py` 做轻量业务别名归一化，再交给 LLM 一次性完成问题标准化、意图识别和筛选器抽取。
+2. **Guard Check (安全守卫)**: `node_check_guard` 使用 `GUARD_PROMPT` 拦截闲聊、无关问题和攻击性输入。
+3. **Filter Refinement (条件修正)**: 基于规则补充最近 N 天、显式日期、单表猜测等结构化过滤条件。
+4. **Dynamic Schema Loading (动态 Schema 加载)**: 根据意图和过滤条件，从 `core/config/tables.json` 中筛选相关表元数据，降低上下文噪声。
+5. **SQL Generation (SQL 生成)**: 通过 `TEXT2SQL_PROMPT` 和业务约束生成 MySQL 8.0 只读查询。
+6. **Self-Correction (纠错反思)**: `reflect_sql` 节点在 SQL 执行失败时根据报错进行自动修复，最多重试 3 次。
+7. **Insight Generation (洞察生成)**: 使用 Pandas 汇总结果，生成自然语言回答，并输出前端可展示的表格数据。
+
+### 关键模块
+- `app.py`: Chainlit 入口，处理登录、会话恢复、消息流转和思考状态展示。
+- `core/graph.py`: LangGraph 工作流定义，包含解析、守卫、SQL 执行、纠错和回答生成。
+- `core/prompts.py`: 维护语义解析、SQL 生成、纠错和回答生成所需提示词。
+- `core/lexicon.py`: 维护高频业务别名到标准术语的轻量归一化规则。
+- `core/config/intents.json`: 维护意图定义，包含 `desc`、`aliases`、`examples`。
+- `core/config/tables.json`: 维护表结构、字段说明和表间关系。
 
 ---
 
@@ -21,37 +30,65 @@
 - 依赖项安装: `pip install -r requirements.txt`
 
 ### 部署步骤
-1.  **数据库配置**: 修改 `.env` 文件，配置 `DB_URI`（例如：`mysql+pymysql://root:password@localhost/boe_planner_db`）。
-2.  **初始化环境**: 运行初始化脚本以创建表结构及测试数据：
-    ```bash
-    python3 init_sql.py
-    ```
-3.  **启动前端服务**:
-    ```bash
-    python3 -m chainlit run app.py -w --host 0.0.0.0 --port 8000
-    ```
+1. **数据库配置**: 修改 `.env` 文件，配置 `DB_URI`、`OPENAI_BASE_URL`、`OPENAI_API_KEY` 等运行参数。
+2. **初始化环境**: 运行初始化脚本创建表结构及测试数据。
+   ```bash
+   python3 init_sql.py
+   ```
+3. **启动前端服务**:
+   ```bash
+   python3 -m chainlit run app.py -w --host 0.0.0.0 --port 8000
+   ```
 
 ---
 
 ## 3. 维护与扩展流程
 
 ### 如何新增一张业务表？
-1.  **定义表结构**: 在 `core/config/tables.json` 中添加表名及其字段信息（注意：字段描述必须包含中文对照，以提升 LLM 理解能力）。
-2.  **建立关联**: 在 `relationships` 字段中显式定义关联规则（例如：`product_code` 关联至 `product_attributes`），确保 SQL 生成时能正确 JOIN。
-3.  **配置意图**: 若需要支持新的查询类型，请更新 `core/config/intents.json`。
-4.  **注册与测试**: 确保物理数据库已同步该表，并运行回归测试用例：
-    ```bash
-    python3 test.py
-    ```
+1. **定义表结构**: 在 `core/config/tables.json` 中添加表名、字段信息和中文说明。
+2. **建立关联**: 在 `relationships` 中显式定义 JOIN 规则，例如 `product_code` 关联到产品属性或工厂映射表。
+3. **补充意图或示例**: 如果新表承载新的查询场景，更新 `core/config/intents.json`，至少补充对应意图的 `desc`、`aliases`、`examples`。
+4. **同步物理数据库**: 确保实际数据库已有该表及必要测试数据。
+5. **回归测试**: 运行评测脚本验证典型问句。
+   ```bash
+   python3 tests/eval_runner.py
+   ```
+
+### 如何优化语义识别准确性？
+- **扩充意图定义**: 优先维护 `core/config/intents.json`，为每个意图补充更丰富的 `aliases` 和真实业务问句 `examples`。
+- **维护轻量别名库**: 在 `core/lexicon.py` 中补充高频黑话、缩写和常见同义表达，但不要把它设计成主分类器。
+- **调优解析 Prompt**: 调整 `core/prompts.py` 中的 `build_query_parse_prompt`，强化意图边界和字段抽取约束。
 
 ### 如何优化 SQL 准确性？
-*   **语义层扩展**: 编辑 `core/lexicon.py`，将一线产线的特定“黑话”或缩写映射为对应的字段逻辑。
-*   **Prompt 调优**: 维护 `core/prompts.py` 中的 `TEXT2SQL_PROMPT`，通过增强约束提示词引导模型行为。
-*   **思维链反馈**: 通过控制台观察流式思维链日志 `>>> [思维链]`，若发现逻辑路径错误，重点审查 `get_schema` 加载的表元数据是否完整。
+- **Schema 质量优先**: 保持 `core/config/tables.json` 的字段说明、中文语义和关系定义完整。
+- **Prompt 调优**: 维护 `core/prompts.py` 中的 `TEXT2SQL_PROMPT`，约束 JOIN、时间字段和只读查询语法。
+- **关注纠错链路**: 通过控制台日志观察 `reflect_sql` 的触发频率和报错模式，反向修正 schema 或 prompt。
+
+### 表结构变更适配 Checklist
+当数据库表结构发生变化时，建议严格按以下顺序适配，避免 SQL 输出和实际库结构脱节：
+
+1. **确认变更类型**: 先判断是新增字段、字段重命名、字段删除、时间字段变更、表拆分合并，还是关联键变化。字段重命名、时间语义变化和关系变化的适配成本最高。
+2. **先改物理数据库**: 在实际 MySQL 中完成 DDL 变更，并准备一批可用于调试的真实或测试数据。
+3. **同步 `tables.json`**: 立即更新 `core/config/tables.json` 中的字段列表、中文说明、表用途和 `relationships`。如果时间字段或主关联键变化，这一步必须和数据库变更同步完成。
+4. **检查意图影响面**: 如果用户问法会因表结构变化而受影响，补充 `core/config/intents.json` 中的 `aliases` 和 `examples`，确保新问法、新字段名和旧业务口径都能被识别。
+5. **检查术语映射**: 如果一线仍沿用旧字段叫法或黑话，更新 `core/lexicon.py`，保证解析阶段还能把用户说法归到新结构上。
+6. **调优 SQL Prompt**: 如果变更会影响 JOIN 路径、时间过滤规则、默认分组方式或业务口径，在 `core/prompts.py` 的 `TEXT2SQL_PROMPT` 中补充约束，不要只依赖模型自行猜测。
+7. **回归跑典型问句**: 执行 `python3 tests/eval_runner.py`，重点观察涉及新字段、旧字段别名、时间过滤和多表 JOIN 的问题是否仍能生成正确 SQL。
+8. **针对失败样例补测试**: 每出现一次错误 SQL，就把对应问句补进 `tests/goldens.json` 或扩充评测集，避免同类问题回归。
+9. **最后再看纠错链路**: 如果大量请求都依赖 `reflect_sql` 才能成功，说明前面的 schema、prompt 或语义解析还没配到位，不要把纠错节点当作主适配手段。
+
+### 推荐调试顺序
+如果改表后发现 SQL 质量下降，建议按这个顺序排查：
+
+1. 先看 `core/config/tables.json` 是否和真实库一致。
+2. 再看 `parse_query` 输出的 `intent`、`filters`、`normalized_question` 是否已经偏了。
+3. 再看 `TEXT2SQL_PROMPT` 是否缺少关键业务约束。
+4. 最后才看 `reflect_sql` 是否只是掩盖了前面的配置问题。
 
 ---
 
 ## 4. 开发规范
-*   **严禁硬编码**: 所有业务规则优先配置化（JSON），避免在 Python 代码中埋入业务逻辑。
-*   **安全防御**: Agent 已内置 `node_check_guard`，非业务相关查询会被自动拦截，请勿随意更改 `GUARD_PROMPT` 配置。
-*   **流式输出**: 节点执行日志均已实现流式打印，调试时请优先观察控制台输出。
+- **严禁硬编码**: 所有业务规则优先配置化，意图、表结构和术语别名尽量沉淀到 JSON 或独立模块。
+- **安全防御**: Agent 已内置 `node_check_guard`，非业务相关查询会被自动拦截，请勿随意放宽 `GUARD_PROMPT`。
+- **流式输出**: 节点执行日志支持流式打印，调试时优先观察控制台中的 `>>> [思维链]`。
+- **配置优先于代码**: 新增业务问法时，优先补 `intents.json` 和 `lexicon.py`，再考虑修改工作流逻辑。

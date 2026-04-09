@@ -16,7 +16,7 @@ from openai import OpenAI
 from langgraph.graph import StateGraph, END
 
 from core.database import get_db_connection
-from core.prompts import TEXT2SQL_PROMPT, ANSWER_PROMPT, REFLECT_SQL_PROMPT, GUARD_PROMPT, build_intent_prompt
+from core.prompts import TEXT2SQL_PROMPT, ANSWER_PROMPT, REFLECT_SQL_PROMPT, GUARD_PROMPT, build_query_parse_prompt
 from core.lexicon import normalize_question
 from core.heuristics import refine_simple_filters, extract_recent_days, has_explicit_date, guess_single_table
 from core.config.loader import load_intents, load_tables
@@ -38,8 +38,9 @@ _openai_client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 db = get_db_connection()
 
 MAX_DETAIL_ROWS = int(os.getenv("MAX_DETAIL_ROWS", "2000"))
-SAMPLE_LIMIT = int(os.getenv("SAMPLE_LIMIT", "200"))
+SAMPLE_LIMIT = int(os.getenv("SAMPLE_LIMIT", "5000"))
 MAX_TABLE_ROWS = int(os.getenv("MAX_TABLE_ROWS", "200"))
+AUTO_TRUNCATE_ROWS = int(os.getenv("AUTO_TRUNCATE_ROWS", "50000"))
 
 
 def _llm_complete(prompt: str, stream: bool = False) -> str:
@@ -53,15 +54,64 @@ def _llm_complete(prompt: str, stream: bool = False) -> str:
     if not stream:
         return (resp.choices[0].message.content or "").strip()
     
-    # 流式输出思维链
     full_text = ""
-    print("\n[STREAMING]: ", end="", flush=True)
+    reasoning_started = False
+    content_started = False
+
+    def _extract_stream_text(delta, attr_name: str) -> str:
+        value = getattr(delta, attr_name, None)
+        if not value:
+            return ""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list):
+            parts = []
+            for item in value:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    parts.append(str(item.get("text") or item.get("content") or ""))
+                else:
+                    parts.append(str(getattr(item, "text", "") or getattr(item, "content", "") or ""))
+            return "".join(parts)
+        if isinstance(value, dict):
+            return str(value.get("text") or value.get("content") or "")
+        return str(getattr(value, "text", "") or getattr(value, "content", "") or "")
+
     for chunk in resp:
-        if chunk.choices[0].delta.content:
-            text = chunk.choices[0].delta.content
-            print(text, end="", flush=True)
-            full_text += text
-    print("\n")
+        choices = getattr(chunk, "choices", None) or []
+        if not choices:
+            continue
+        delta = getattr(choices[0], "delta", None)
+        if not delta:
+            continue
+
+        reasoning_text = ""
+        for field_name in ("reasoning_content", "reasoning", "reasoning_text"):
+            reasoning_text = _extract_stream_text(delta, field_name)
+            if reasoning_text:
+                break
+
+        if DEBUG_TRACE and reasoning_text:
+            if not reasoning_started:
+                print("\n[REASONING]: ", end="", flush=True)
+                reasoning_started = True
+            print(reasoning_text, end="", flush=True)
+
+        content_text = _extract_stream_text(delta, "content")
+        if content_text:
+            if DEBUG_TRACE and reasoning_started and not content_started:
+                print("\n[CONTENT]: ", end="", flush=True)
+            elif not DEBUG_TRACE and not content_started:
+                print("\n[STREAMING]: ", end="", flush=True)
+            content_started = True
+            print(content_text, end="", flush=True)
+            full_text += content_text
+
+    if DEBUG_TRACE and reasoning_started:
+        print("", flush=True)
+    if content_started:
+        print("\n", flush=True)
     return full_text.strip()
 
 # ==========================================
@@ -85,6 +135,8 @@ class GraphState(TypedDict):
     chart_data: dict # 🔴 存放可视化图表 JSON
     table_data: list
     table_columns: list
+    row_count: int
+    truncated: bool
 
 # ==========================================
 # 2. 定义节点 (Nodes) - 注入思维链流式输出
@@ -120,10 +172,26 @@ def node_get_schema(state: GraphState):
         schema = _format_schema(hit_tables) if hit_tables else _format_schema()
     return {"table_schema": schema}
 
-def node_normalize_question(state: GraphState):
-    print("\n>>> [思维链] 正在标准化用户意图...")
-    normalized, hits = normalize_question(state["question"])
-    return {"normalized_question": normalized, "lexicon_hits": hits}
+def node_parse_query(state: GraphState):
+    print("\n>>> [思维链] 正在解析问题语义与查询意图...")
+    rule_normalized, hits = normalize_question(state["question"])
+    prompt_text = build_query_parse_prompt(load_intents(), list(load_tables().keys()))
+    prompt = prompt_text.format(
+        question=state["question"],
+        rule_normalized_question=rule_normalized,
+    )
+    data = _safe_json_loads(_llm_complete(prompt))
+    normalized_question = (data.get("normalized_question") or rule_normalized or state["question"]).strip()
+    intent = (data.get("intent") or "unknown").strip()
+    confidence = float(data.get("confidence") or 0.0)
+    filters = data.get("filters") or {}
+    return {
+        "normalized_question": normalized_question,
+        "lexicon_hits": hits,
+        "intent": intent,
+        "intent_confidence": confidence,
+        "intent_filters": filters,
+    }
 
 def node_write_sql(state: GraphState):
     print("\n>>> [思维链] 正在编写 SQL (包含业务逻辑注入)...")
@@ -164,19 +232,6 @@ def node_reflect_sql(state: GraphState):
 def _strip_limit(sql: str) -> str:
     return re.sub(r"\s+limit\s+\d+(\s*,\s*\d+)?\s*$", "", sql, flags=re.IGNORECASE).strip()
 
-def node_extract_intent(state: GraphState):
-    prompt_text = build_intent_prompt(load_intents(), list(load_tables().keys()))
-    prompt = prompt_text.format(question=state.get("normalized_question") or state["question"])
-    data = _safe_json_loads(_llm_complete(prompt))
-    intent = (data.get("intent") or "unknown").strip()
-    confidence = float(data.get("confidence") or 0.0)
-    filters = data.get("filters") or {}
-    return {
-        "intent": intent,
-        "intent_confidence": confidence,
-        "intent_filters": filters,
-    }
-
 def node_refine_filters(state: GraphState):
     intent = state.get("intent")
     filters = state.get("intent_filters") or {}
@@ -216,7 +271,7 @@ def node_execute_sql(state: GraphState):
                     row_count = int(count_res[0][0])
             except Exception:
                 row_count = None
-            if row_count is not None and row_count > MAX_DETAIL_ROWS and " limit " not in lower_sql:
+            if row_count is not None and row_count > AUTO_TRUNCATE_ROWS and " limit " not in lower_sql:
                 sql = f"{sql} LIMIT {SAMPLE_LIMIT}"
                 truncated = True
         
@@ -289,6 +344,10 @@ def node_generate_answer(state: GraphState):
     db_result = state.get("db_result", [])
     sql_query = state.get("sql_query", "")
     columns = state.get("table_columns", [])
+    row_count = state.get("row_count")
+    truncated = bool(state.get("truncated"))
+    lower_sql = sql_query.lower()
+    is_aggregate = (" group by " in lower_sql) or any(k in lower_sql for k in ("count(", "sum(", "avg(", "min(", "max("))
 
     # 使用 pandas 构建 DataFrame
     if db_result and columns:
@@ -302,7 +361,7 @@ def node_generate_answer(state: GraphState):
     chart_json = None
     
     if not df.empty:
-        total_count = len(df)
+        total_count = row_count or len(df)
         summary_text = f"查询结果共 {total_count} 条记录。"
         # 补充数值列统计
         numeric_cols = df.select_dtypes(include=['number']).columns
@@ -330,6 +389,21 @@ def node_generate_answer(state: GraphState):
         table_data = []
         summary_text = "未查询到数据。"
 
+    if not df.empty and not is_aggregate:
+        if truncated and row_count:
+            answer = f"已查询到 {row_count} 条记录，当前展示前 {len(df)} 条。结果集较大，请结合筛选条件缩小范围后继续查看。"
+        else:
+            answer = f"已查询到 {row_count or len(df)} 条记录，请查看下方结果表。"
+        return {
+            "final_answer": answer,
+            "chart_data": chart_json,
+            "table_data": table_data,
+            "table_columns": columns,
+            "chat_history": [f"问: {state['question']}\n答: {answer}"],
+            "row_count": row_count,
+            "truncated": truncated,
+        }
+
     prompt = ANSWER_PROMPT.format(
         question=state["question"],
         sql_query=sql_query,
@@ -346,14 +420,15 @@ def node_generate_answer(state: GraphState):
         "chart_data": chart_json,
         "table_data": table_data,
         "table_columns": columns,
-        "chat_history": [f"问: {state['question']}\n答: {answer}"]
+        "chat_history": [f"问: {state['question']}\n答: {answer}"],
+        "row_count": row_count,
+        "truncated": truncated,
     }
 
 
 def get_workflow():
     workflow = StateGraph(GraphState)
-    workflow.add_node("normalize_question", node_normalize_question)
-    workflow.add_node("extract_intent", node_extract_intent)
+    workflow.add_node("parse_query", node_parse_query)
     workflow.add_node("check_guard", node_check_guard)
     workflow.add_node("refine_filters", node_refine_filters)
     workflow.add_node("get_schema", node_get_schema)
@@ -361,9 +436,8 @@ def get_workflow():
     workflow.add_node("execute_sql", node_execute_sql)
     workflow.add_node("reflect_sql", node_reflect_sql)
     workflow.add_node("generate_answer", node_generate_answer)
-    workflow.set_entry_point("normalize_question")
-    workflow.add_edge("normalize_question", "extract_intent")
-    workflow.add_edge("extract_intent", "check_guard")
+    workflow.set_entry_point("parse_query")
+    workflow.add_edge("parse_query", "check_guard")
 
     def route_after_guard(state: GraphState):
         if state.get("intent") == "REJECT":
@@ -386,3 +460,7 @@ def get_workflow():
     workflow.add_edge("reflect_sql", "execute_sql")
     workflow.add_edge("generate_answer", END)
     return workflow
+
+
+async def get_compiled_workflow():
+    return get_workflow().compile()
