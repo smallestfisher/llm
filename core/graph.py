@@ -16,10 +16,10 @@ from openai import OpenAI
 from langgraph.graph import StateGraph, END
 
 from core.database import get_db_connection
-from core.prompts import TEXT2SQL_PROMPT, ANSWER_PROMPT, REFLECT_SQL_PROMPT, GUARD_PROMPT, build_query_parse_prompt
+from core.prompts import build_text2sql_prompt, build_answer_prompt, build_reflect_sql_prompt, build_guard_prompt, build_query_parse_prompt
 from core.lexicon import normalize_question
 from core.heuristics import refine_simple_filters, extract_recent_days, has_explicit_date, guess_single_table
-from core.config.loader import load_intents, load_tables
+from core.config.loader import load_intents, load_tables, load_prompt_context
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -200,9 +200,10 @@ def node_write_sql(state: GraphState):
     history_text = "\n".join(history_list) if history_list else ""
     enhanced_question = f"【前情提要】\n{history_text}\n\n【当前用户问题】\n{state.get('normalized_question') or state['question']}"
     
-    prompt = TEXT2SQL_PROMPT.format(
+    prompt = build_text2sql_prompt(
         table_schema=state["table_schema"],
-        question=enhanced_question
+        question=enhanced_question,
+        prompt_context=load_prompt_context(),
     )
     sql = _llm_complete(prompt, stream=True)
     if sql.startswith("```sql"): sql = sql[6:]
@@ -216,11 +217,12 @@ def node_write_sql(state: GraphState):
 def node_reflect_sql(state: GraphState):
     print("\n>>> [思维链] SQL 报错，正在反思错误原因并尝试修复...")
     retry_count = (state.get("retry_count") or 0) + 1
-    prompt = REFLECT_SQL_PROMPT.format(
+    prompt = build_reflect_sql_prompt(
         question=state["question"],
         table_schema=state["table_schema"],
         sql_query=state["sql_query"],
-        error_message=state["sql_error"]
+        error_message=state["sql_error"],
+        prompt_context=load_prompt_context(),
     )
     sql = _llm_complete(prompt, stream=True)
     if sql.startswith("```sql"): sql = sql[6:]
@@ -320,7 +322,7 @@ def _safe_json_loads(text: str) -> dict:
 
 def node_check_guard(state: GraphState):
     print("\n>>> [思维链] 正在进行安全合规检查...")
-    prompt = GUARD_PROMPT.format(question=state["question"])
+    prompt = build_guard_prompt(question=state["question"], prompt_context=load_prompt_context())
     decision = _llm_complete(prompt)
     if "REJECT" in decision:
         return {"intent": "REJECT"}
@@ -404,11 +406,12 @@ def node_generate_answer(state: GraphState):
             "truncated": truncated,
         }
 
-    prompt = ANSWER_PROMPT.format(
+    prompt = build_answer_prompt(
         question=state["question"],
         sql_query=sql_query,
         db_result=db_preview,
-        data_summary=summary_text
+        data_summary=summary_text,
+        prompt_context=load_prompt_context(),
     )
 
     logger.info(f"prompt: {prompt}")

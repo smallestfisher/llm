@@ -1,10 +1,12 @@
 import json
+from core.config.loader import resolve_config_path
 from core.semantic_cache import add_mapping
 
 def sync_lexicon_to_db():
     """将 lexicon.json 中的所有词条同步到向量库"""
     try:
-        with open('core/config/lexicon.json', 'r', encoding='utf-8') as f:
+        lexicon_path = resolve_config_path("lexicon.json")
+        with open(lexicon_path, 'r', encoding='utf-8') as f:
             lexicon = json.load(f)
         
         count = 0
@@ -14,7 +16,7 @@ def sync_lexicon_to_db():
             add_mapping(term, field, description)
             count += 1
             
-        print(f"成功同步 {count} 条语义映射至向量库。")
+        print(f"成功同步 {count} 条语义映射至向量库: {lexicon_path}")
     except Exception as e:
         print(f"同步失败: {e}")
 

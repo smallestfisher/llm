@@ -1,0 +1,21 @@
+{
+  "domain_expert_role": "资深制造企业 MySQL 数据库专家",
+  "answer_role": "PMC 部门的数据分析助理",
+  "guard_role": "生产制造系统的安全守卫",
+  "guard_scope": "生产排产、库存、需求、销售或财务等业务数据",
+  "relationship_rules": [
+    "必须遵循 tables.json 中定义的 `relationships` 约束来执行 JOIN。",
+    "优先通过 `product_code` 联接 `product_attributes` 获取属性，联接 `product_mapping` 获取工厂信息。",
+    "时间过滤：严格区分日表 (work_date/report_date) 与月表 (plan_month/forecast_month)。"
+  ],
+  "sql_requirements": [
+    "针对库存查询，必须针对每一个 `product_code` 找到其最新的 `report_date`。",
+    "当查询“预警”、“异常”、“风险”或“情况”时，默认过滤出有问题的数据（如 `defect_qty > 0`, `downtime_hours > 0`）。严禁在未说明的情况下随意过滤 `hold_flag` 等业务字段。"
+  ],
+  "answer_requirements": [
+    "如果结果面向经营复盘或排产协同，优先点出工厂、产线、产品维度上的核心差异。"
+  ],
+  "reflect_requirements": [
+    "修复时优先检查时间字段是否用错了日/月粒度，或是否遗漏了关系表 JOIN。"
+  ]
+}
