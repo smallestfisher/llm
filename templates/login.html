@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}登录 | BOE Data Copilot{% endblock %}
+
+{% block content %}
+<section class="auth-page">
+  <div class="panel auth-card">
+    <div class="auth-header">
+      <div class="brand brand-inline">
+        <div class="brand-mark">BD</div>
+        <div>
+          <div class="brand-name">BOE Data Copilot</div>
+          <div class="brand-subtitle">AI Workspace</div>
+        </div>
+      </div>
+      <div class="eyebrow">Sign In</div>
+      <h1 class="auth-title">欢迎回来</h1>
+      <p class="auth-subtitle">使用本地账号进入制造业数据问答工作台。</p>
+      {% if is_first_user %}
+      <div class="auth-note">系统还没有用户，请先注册首个管理员账号。</div>
+      {% endif %}
+    </div>
+
+    <form class="auth-form" action="/login" method="post">
+      <label class="field">
+        <span class="field-label">用户名</span>
+        <input type="text" name="username" autocomplete="username" required>
+      </label>
+      <label class="field">
+        <span class="field-label">密码</span>
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <button class="button button-primary button-block" type="submit">登录</button>
+    </form>
+
+    <div class="auth-switch">
+      <span>还没有账号？</span>
+      <a href="/register">注册</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

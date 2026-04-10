@@ -7,7 +7,6 @@ try:
     import pandas as pd
 except Exception:
     pd = None
-import plotly.express as px
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from typing import TypedDict, Annotated

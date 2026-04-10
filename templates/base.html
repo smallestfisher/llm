@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}BOE Data Copilot{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
+  <script defer src="{{ url_for('static', path='/app.js') }}"></script>
+</head>
+<body class="{% if auth_screen %}auth-body{% else %}app-body{% endif %}">
+  <div class="shell-glow shell-glow-a"></div>
+  <div class="shell-glow shell-glow-b"></div>
+
+  <div class="app-shell">
+    {% if current_user %}
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <a class="brand" href="/">
+          <div class="brand-mark">BD</div>
+          <div>
+            <div class="brand-name">BOE Data Copilot</div>
+            <div class="brand-subtitle">AI Workspace</div>
+          </div>
+        </a>
+        <a class="button button-primary button-block" href="/threads/new">新建对话</a>
+      </div>
+
+      <div class="sidebar-section sidebar-history">
+        <div class="sidebar-label">Conversations</div>
+        <nav class="thread-list">
+          {% for thread in threads %}
+          <a class="thread-link {% if selected_thread and selected_thread.public_id == thread.public_id %}active{% endif %}" href="/threads/{{ thread.public_id }}">
+            <span class="thread-link-title">{{ thread.title }}</span>
+          </a>
+          {% else %}
+          <div class="empty-copy">还没有对话</div>
+          {% endfor %}
+        </nav>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="profile-pill profile-pill-compact">
+          <div class="profile-avatar">{{ current_user.username[:1] | upper }}</div>
+          <div>
+            <div class="profile-name">{{ current_user.username }}</div>
+            <div class="profile-meta">{{ current_roles|join(" · ") }}</div>
+          </div>
+        </div>
+        <div class="sidebar-footer-actions">
+          <nav class="nav-list nav-list-compact" aria-label="账户操作">
+            <a class="nav-link nav-icon-link {% if request.url.path == '/profile/password' %}active{% endif %}" href="/profile/password" title="修改密码" aria-label="修改密码">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 11V8a5 5 0 0 1 10 0v3"/>
+                <rect x="5" y="11" width="14" height="10" rx="2"/>
+                <circle cx="12" cy="16" r="1.5"/>
+              </svg>
+              <span class="sr-only">修改密码</span>
+            </a>
+            {% if is_admin %}
+            <a class="nav-link nav-icon-link {% if request.url.path == '/admin/users' %}active{% endif %}" href="/admin/users" title="用户管理" aria-label="用户管理">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="9" cy="9" r="3"/>
+                <circle cx="17" cy="10" r="2.5"/>
+                <path d="M4.5 19a4.5 4.5 0 0 1 9 0"/>
+                <path d="M14 19a3.5 3.5 0 0 1 7 0"/>
+              </svg>
+              <span class="sr-only">用户管理</span>
+            </a>
+            <a class="nav-link nav-icon-link {% if request.url.path == '/admin/audit' %}active{% endif %}" href="/admin/audit" title="审计日志" aria-label="审计日志">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/>
+                <path d="M9 9h6"/>
+                <path d="M9 13h6"/>
+                <path d="M9 17h4"/>
+              </svg>
+              <span class="sr-only">审计日志</span>
+            </a>
+            {% endif %}
+          </nav>
+          <form action="/logout" method="post">
+            <button class="nav-link nav-icon-link" type="submit" title="退出登录" aria-label="退出登录">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M15 17l5-5-5-5"/>
+                <path d="M20 12H9"/>
+                <path d="M13 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7"/>
+              </svg>
+              <span class="sr-only">退出登录</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    </aside>
+    {% endif %}
+
+    <div class="main-panel">
+      {% if not auth_screen and not hide_topbar %}
+      <header class="topbar">
+        <div class="topbar-copy">
+          <div class="eyebrow">BOE Data Copilot</div>
+          <h1 class="page-title">{% block page_title %}BOE 数据副驾驶{% endblock %}</h1>
+          <p class="page-subtitle">{% block page_subtitle %}制造业数据问答与运维后台{% endblock %}</p>
+        </div>
+      </header>
+      {% endif %}
+
+      {% if flashes %}
+      <section class="toast-stack" aria-live="polite" aria-atomic="true">
+        {% for flash in flashes %}
+        <div class="toast toast-{{ flash.level }}">{{ flash.message }}</div>
+        {% endfor %}
+      </section>
+      {% endif %}
+
+      <main class="content{% if chat_layout %} content-chat{% endif %}{% if fill_layout %} content-fill{% endif %}{% if modal_layout %} content-modal{% endif %}">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+</body>
+</html>

@@ -13,8 +13,9 @@
 7. **Insight Generation (洞察生成)**: 使用 Pandas 汇总结果，生成自然语言回答，并输出前端可展示的表格数据。
 
 ### 关键模块
-- `app.py`: Chainlit 入口，处理登录、会话恢复、消息流转和思考状态展示。
+- `app.py`: FastAPI Web 应用入口，负责登录、会话管理、聊天页面、用户管理和审计日志页面。
 - `core/graph.py`: LangGraph 工作流定义，包含解析、守卫、SQL 执行、纠错和回答生成。
+- `core/auth_db.py`: 本地 SQLite 身份与运维数据层，包含用户、角色、账号状态、聊天线程、聊天消息和审计日志。
 - `core/prompts.py`: 维护语义解析、SQL 生成、纠错和回答生成所需提示词。
 - `core/lexicon.py`: 维护高频业务别名到标准术语的轻量归一化规则。
 - `core/config/intents.json`: 维护意图定义，包含 `desc`、`aliases`、`examples`。
@@ -27,18 +28,26 @@
 ### 环境依赖
 - **Python 3.10+**
 - **MySQL 8.0+**
+- **本地 SQLite**: 用于存放用户、角色、聊天记录和审计日志。
 - 依赖项安装: `pip install -r requirements.txt`
 
 ### 部署步骤
 1. **数据库配置**: 修改 `.env` 文件，配置 `DB_URI`、`OPENAI_BASE_URL`、`OPENAI_API_KEY` 等运行参数。
+   - `DB_URI`: 业务 MySQL 连接串，供 Text2SQL 查询使用。
+   - `LOCAL_DB_URI`: 本地 Web 应用 SQLite 连接串，可选，默认 `sqlite:///./app_local.db`。
+   - `SESSION_SECRET`: FastAPI Session Cookie 密钥。
 2. **初始化环境**: 运行初始化脚本创建表结构及测试数据。
    ```bash
    python3 init_sql.py
    ```
-3. **启动前端服务**:
+3. **启动 Web 服务**:
    ```bash
-   python3 -m chainlit run app.py -w --host 0.0.0.0 --port 8000
+   uvicorn app:app --host 0.0.0.0 --port 8000 --reload
    ```
+4. **Web 注册规则**:
+   - 系统不再自动注入默认管理员账号
+   - 首个通过 `/register` 注册成功的账号自动获得 `admin,user` 角色
+   - 后续注册账号默认为 `user`
 
 ---
 
