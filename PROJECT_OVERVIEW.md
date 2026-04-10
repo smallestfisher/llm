@@ -1,103 +1,132 @@
-# BOE Data Copilot (V2.0 生产级架构文档)
+# BOE Data Copilot (V3.0 架构文档)
 
-## 1. 系统架构
-本项目采用意图驱动的 Agentic 工作流。系统核心基于 `langgraph` 构建，通过统一语义解析、SQL 生成与结果解读，实现从自然语言到数据洞察的自动化闭环。
+## 1. 当前主架构
 
-### 核心处理链路
-1. **Query Parsing (统一语义解析)**: `core/graph.py` 中的 `parse_query` 节点先调用 `core/lexicon.py` 做轻量业务别名归一化，再交给 LLM 一次性完成问题标准化、意图识别和筛选器抽取。
-2. **Guard Check (安全守卫)**: `node_check_guard` 使用 `GUARD_PROMPT` 拦截闲聊、无关问题和攻击性输入。
-3. **Filter Refinement (条件修正)**: 基于规则补充最近 N 天、显式日期、单表猜测等结构化过滤条件。
-4. **Dynamic Schema Loading (动态 Schema 加载)**: 根据意图和过滤条件，从 `core/config/tables.json` 中筛选相关表元数据，降低上下文噪声。
-5. **SQL Generation (SQL 生成)**: 通过 `TEXT2SQL_PROMPT` 和业务约束生成 MySQL 8.0 只读查询。
-6. **Self-Correction (纠错反思)**: `reflect_sql` 节点在 SQL 执行失败时根据报错进行自动修复，最多重试 3 次。
-7. **Insight Generation (洞察生成)**: 使用 Pandas 汇总结果，生成自然语言回答，并输出前端可展示的表格数据。
+当前主系统已经完成从单体 LangGraph 流程到 `Router + Skills + Composer + Orchestrator` 的迁移。
 
-### 关键模块
-- `app.py`: FastAPI Web 应用入口，负责登录、会话管理、聊天页面、用户管理和审计日志页面。
-- `core/graph.py`: LangGraph 工作流定义，包含解析、守卫、SQL 执行、纠错和回答生成。
-- `core/auth_db.py`: 本地 SQLite 身份与运维数据层，包含用户、角色、账号状态、聊天线程、聊天消息和审计日志。
-- `core/prompts.py`: 维护语义解析、SQL 生成、纠错和回答生成所需提示词。
-- `core/lexicon.py`: 维护高频业务别名到标准术语的轻量归一化规则。
-- `core/config/intents.json`: 维护意图定义，包含 `desc`、`aliases`、`examples`。
-- `core/config/tables.json`: 维护表结构、字段说明和表间关系。
+核心处理链路：
 
----
+1. `app.py` 接收请求，读取本地聊天历史并启动流式响应。
+2. `core/workflow/orchestrator.py` 作为唯一主编排入口。
+3. `core/router/intent_router.py` 判定问题是 `production`、`inventory`、`cross_domain` 还是 `general`。
+4. `core/router/filter_extractor.py` 提取共享过滤器，例如 `recent_days`、`latest`、日期范围、月份范围。
+5. 单域问题交给对应 skill 执行。
+6. 跨域问题交给 `core/composer/cross_domain.py` 拆成多个 skill plan，再顺序执行并汇总。
+7. 结果通过统一状态结构回传给前端，前端显示执行状态、答案和表格结果。
 
-## 2. 部署指南
+## 2. 模块分层
 
-### 环境依赖
-- **Python 3.10+**
-- **MySQL 8.0+**
-- **本地 SQLite**: 用于存放用户、角色、聊天记录和审计日志。
-- 依赖项安装: `pip install -r requirements.txt`
+### Web 层
+- `app.py`
+  负责会话、登录注册、用户管理、审计日志、聊天接口和流式输出。
 
-### 部署步骤
-1. **数据库配置**: 修改 `.env` 文件，配置 `DB_URI`、`OPENAI_BASE_URL`、`OPENAI_API_KEY` 等运行参数。
-   - `DB_URI`: 业务 MySQL 连接串，供 Text2SQL 查询使用。
-   - `LOCAL_DB_URI`: 本地 Web 应用 SQLite 连接串，可选，默认 `sqlite:///./app_local.db`。
-   - `SESSION_SECRET`: FastAPI Session Cookie 密钥。
-2. **初始化环境**: 运行初始化脚本创建表结构及测试数据。
-   ```bash
-   python3 init_sql.py
-   ```
-3. **启动 Web 服务**:
-   ```bash
-   uvicorn app:app --host 0.0.0.0 --port 8000 --reload
-   ```
-4. **Web 注册规则**:
-   - 系统不再自动注入默认管理员账号
-   - 首个通过 `/register` 注册成功的账号自动获得 `admin,user` 角色
-   - 后续注册账号默认为 `user`
+### Orchestrator 层
+- `core/workflow/orchestrator.py`
+  负责主链路调度。
+  它只决定谁来执行，不再承担领域 SQL 细节。
 
----
+### Router 层
+- `core/router/intent_router.py`
+  负责领域路由和跨域判定。
+- `core/router/filter_extractor.py`
+  负责抽取共享过滤器。
 
-## 3. 维护与扩展流程
+### Skills 层
+- `core/skills/base.py`
+  skill 通用执行骨架。
+- `core/skills/production/skill.py`
+  生产与计划域 skill。
+- `core/skills/inventory/skill.py`
+  库存与供应保障域 skill。
+- `core/skills/generic/skill.py`
+  通用兜底 skill。
+- `core/skills/prompting.py`
+  skill 独立 prompt 生成。
 
-### 如何新增一张业务表？
-1. **定义表结构**: 在 `core/config/tables.json` 中添加表名、字段信息和中文说明。
-2. **建立关联**: 在 `relationships` 中显式定义 JOIN 规则，例如 `product_code` 关联到产品属性或工厂映射表。
-3. **补充意图或示例**: 如果新表承载新的查询场景，更新 `core/config/intents.json`，至少补充对应意图的 `desc`、`aliases`、`examples`。
-4. **同步物理数据库**: 确保实际数据库已有该表及必要测试数据。
-5. **回归测试**: 运行评测脚本验证典型问句。
-   ```bash
-   python3 tests/eval_runner.py
-   ```
+### Composer 层
+- `core/composer/cross_domain.py`
+  负责跨域拆分、顺序执行结果汇总和统一回答。
 
-### 如何优化语义识别准确性？
-- **扩充意图定义**: 优先维护 `core/config/intents.json`，为每个意图补充更丰富的 `aliases` 和真实业务问句 `examples`。
-- **维护轻量别名库**: 在 `core/lexicon.py` 中补充高频黑话、缩写和常见同义表达，但不要把它设计成主分类器。
-- **调优解析 Prompt**: 调整 `core/prompts.py` 中的 `build_query_parse_prompt`，强化意图边界和字段抽取约束。
+### Runtime 层
+- `core/runtime/skill_runtime.py`
+  提供 LLM 调用、SQL 清洗、SQL 执行、回答生成等公共运行时。
+- `core/runtime/state.py`
+  定义 `RouteDecision`、`SkillPlan`、`SkillResult` 等跨层状态对象。
 
-### 如何优化 SQL 准确性？
-- **Schema 质量优先**: 保持 `core/config/tables.json` 的字段说明、中文语义和关系定义完整。
-- **Prompt 调优**: 维护 `core/prompts.py` 中的 `TEXT2SQL_PROMPT`，约束 JOIN、时间字段和只读查询语法。
-- **关注纠错链路**: 通过控制台日志观察 `reflect_sql` 的触发频率和报错模式，反向修正 schema 或 prompt。
+### Persistence 层
+- `core/database.py`
+  业务数据库访问。
+- `core/auth_db.py`
+  本地 SQLite 用户、角色、聊天、审计持久化。
 
-### 表结构变更适配 Checklist
-当数据库表结构发生变化时，建议严格按以下顺序适配，避免 SQL 输出和实际库结构脱节：
+## 3. 旧架构位置
 
-1. **确认变更类型**: 先判断是新增字段、字段重命名、字段删除、时间字段变更、表拆分合并，还是关联键变化。字段重命名、时间语义变化和关系变化的适配成本最高。
-2. **先改物理数据库**: 在实际 MySQL 中完成 DDL 变更，并准备一批可用于调试的真实或测试数据。
-3. **同步 `tables.json`**: 立即更新 `core/config/tables.json` 中的字段列表、中文说明、表用途和 `relationships`。如果时间字段或主关联键变化，这一步必须和数据库变更同步完成。
-4. **检查意图影响面**: 如果用户问法会因表结构变化而受影响，补充 `core/config/intents.json` 中的 `aliases` 和 `examples`，确保新问法、新字段名和旧业务口径都能被识别。
-5. **检查术语映射**: 如果一线仍沿用旧字段叫法或黑话，更新 `core/lexicon.py`，保证解析阶段还能把用户说法归到新结构上。
-6. **调优 SQL Prompt**: 如果变更会影响 JOIN 路径、时间过滤规则、默认分组方式或业务口径，在 `core/prompts.py` 的 `TEXT2SQL_PROMPT` 中补充约束，不要只依赖模型自行猜测。
-7. **回归跑典型问句**: 执行 `python3 tests/eval_runner.py`，重点观察涉及新字段、旧字段别名、时间过滤和多表 JOIN 的问题是否仍能生成正确 SQL。
-8. **针对失败样例补测试**: 每出现一次错误 SQL，就把对应问句补进 `tests/goldens.json` 或扩充评测集，避免同类问题回归。
-9. **最后再看纠错链路**: 如果大量请求都依赖 `reflect_sql` 才能成功，说明前面的 schema、prompt 或语义解析还没配到位，不要把纠错节点当作主适配手段。
+- `core/graph.py` 仍保留在仓库中。
+- 它现在是历史兼容实现，不再参与 Web 应用主运行路径。
+- 保留它的原因是避免外部脚本、旧实验或临时对比脚本立即失效。
 
-### 推荐调试顺序
-如果改表后发现 SQL 质量下降，建议按这个顺序排查：
+如果后续确认外部没有引用，可以再移到 `legacy/` 或直接删除。
 
-1. 先看 `core/config/tables.json` 是否和真实库一致。
-2. 再看 `parse_query` 输出的 `intent`、`filters`、`normalized_question` 是否已经偏了。
-3. 再看 `TEXT2SQL_PROMPT` 是否缺少关键业务约束。
-4. 最后才看 `reflect_sql` 是否只是掩盖了前面的配置问题。
+## 4. 新旧架构差异
 
----
+### 旧架构
+`parse_query -> guard -> refine -> schema -> write_sql -> execute -> reflect -> answer`
 
-## 4. 开发规范
-- **严禁硬编码**: 所有业务规则优先配置化，意图、表结构和术语别名尽量沉淀到 JSON 或独立模块。
-- **安全防御**: Agent 已内置 `node_check_guard`，非业务相关查询会被自动拦截，请勿随意放宽 `GUARD_PROMPT`。
-- **流式输出**: 节点执行日志支持流式打印，调试时优先观察控制台中的 `>>> [思维链]`。
-- **配置优先于代码**: 新增业务问法时，优先补 `intents.json` 和 `lexicon.py`，再考虑修改工作流逻辑。
+问题：
+- 所有问题都被塞进同一个大流程
+- 语义解析节点过重
+- 跨域问题只能硬扛在一个统一流程里
+- 扩展新业务域时耦合度高
+
+### 新架构
+`router -> one or more skills -> composer -> final response`
+
+收益：
+- 每个业务域可以独立收敛 prompt 和 SQL 规则
+- 跨域编排可以渐进增强
+- 低置信度问题可落到 generic skill，而不是回退旧大图
+- 更适合后续扩 skill、扩 domain、扩组合策略
+
+## 5. 维护策略
+
+### 新增业务域
+1. 新建一个 skill 文件。
+2. 配置 `domain_label`、`guard_scope`、`focus_areas`、`sql_rules`、`answer_rules`。
+3. 在 router 中补充领域关键词和路由规则。
+4. 必要时在 composer 中加入该域的跨域组合逻辑。
+5. 增加单测和回归样例。
+
+### 表结构变更
+优先顺序：
+1. 改真实数据库
+2. 改 `core/config/tables.json`
+3. 再改 skill 的规则和 prompt
+4. 最后补路由词典和回归测试
+
+不要反过来先靠 prompt 猜字段。
+
+### 精度优化
+当前数据库字段不是最终生产版时，优先保证：
+- 技能边界清晰
+- 运行链路稳定
+- 共享过滤器正确传播
+- 跨域结果可汇总
+
+等正式生产库字段稳定后，再按 skill 分域调优 SQL 精度。
+
+## 6. 当前已完成事项
+
+- FastAPI Web 应用替换旧 Chainlit 交互
+- 本地注册、登录、角色、密码修改、禁用账号、审计日志
+- 聊天线程与消息持久化
+- 新主架构接管运行入口
+- 单域 skill 执行
+- 跨域顺序编排与结果汇总
+- 基础路由、过滤器、composer 单测
+
+## 7. 剩余可选优化
+
+- 将跨域从顺序执行升级为并行执行
+- 为 skill 增加更严格的 schema selector
+- 增加更细的领域答案汇总模板
+- 补用户系统和聊天接口集成测试

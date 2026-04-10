@@ -1,38 +1,53 @@
 [
     {
         "question": "查看现在的良品率",
+        "expected_route": "production",
+        "expected_skill": "production_skill",
         "expected_field": "production_actuals.yield_rate"
     },
     {
         "question": "A产线的实际产出是多少",
+        "expected_route": "production",
+        "expected_skill": "production_skill",
         "expected_field": "production_actuals.output_qty"
     },
     {
         "question": "目前在途的库存量",
+        "expected_route": "inventory",
+        "expected_skill": "inventory_skill",
         "expected_field": "oms_inventory.in_transit_qty"
     },
     {
         "question": "有多少wip在制",
+        "expected_route": "production",
         "expected_field": "work_in_progress"
     },
     {
         "question": "查看A1产线昨天的平均良率",
+        "expected_route": "production",
+        "expected_skill": "production_skill",
         "expected_field": "production_actuals.yield_rate"
     },
     {
         "question": "查询Samsung目前的在途库存量",
+        "expected_route": "inventory",
+        "expected_skill": "inventory_skill",
         "expected_field": "oms_inventory.in_transit_qty"
     },
     {
         "question": "OLED产品过去三个月的产出趋势",
+        "expected_route": "production",
+        "expected_skill": "production_skill",
         "expected_field": "monthly_plan_approved.target_panel_qty"
     },
     {
         "question": "目前优先级为1的在制数量分布",
+        "expected_route": "production",
         "expected_field": "work_in_progress.wip_qty"
     },
     {
         "question": "OLED产品中上个月毛利率最低的产品",
+        "expected_route": "production",
         "expected_field": "sales_financial_perf.gross_margin_pct"
     }
 ]

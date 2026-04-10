@@ -1,3 +1,12 @@
+"""
+Legacy compatibility workflow.
+
+This module preserves the original monolithic graph implementation for
+historical reference and temporary compatibility only.
+The current Web application runtime no longer depends on this module;
+production traffic now goes through `core.workflow.orchestrator`.
+"""
+
 import sqlite3
 import json
 import os
@@ -7,7 +16,6 @@ try:
     import pandas as pd
 except Exception:
     pd = None
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from typing import TypedDict, Annotated
 import operator
@@ -377,9 +385,6 @@ def node_generate_answer(state: GraphState):
             if any(isinstance(val, Decimal) for val in df[col]):
                 df[col] = df[col].astype(float)
 
-        # 3. 【最关键的修改】：把 DataFrame 转换回原生字典列表！
-        # 这样赋值给 table_data，LangGraph 的 msgpack 序列化就不会再报错了
-        # table_data = df.to_dict(orient="records")
         table_data = df.to_markdown(index=False, floatfmt=",.2f")
 
         logger.info(f"table_data 样例: {table_data[:2]}") # 打印前两行看看

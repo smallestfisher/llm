@@ -2,12 +2,13 @@
 
 一个面向制造业数据问答场景的 Web 应用。
 
-这版工程保留了原有的 `LangGraph + Text2SQL + SQL` 后端链路，同时将前端替换为基于 `FastAPI + Jinja2` 的普通 Web 应用，内置本地账号、角色控制、密码修改、禁用账号、聊天历史和审计日志。
+当前版本已经完成后端主链路迁移，运行架构为 `Router + Skills + Composer + Orchestrator`。前端基于 `FastAPI + Jinja2`，内置本地账号、角色控制、密码修改、禁用账号、聊天历史和审计日志。
 
 ## 功能概览
 
 - 自然语言转 SQL 查询
-- 基于 `LangGraph` 的工作流编排
+- 基于 `Router + Skills` 的领域编排
+- 支持单域查询与跨域组合查询
 - FastAPI Web 前端
 - 本地注册、登录、登出
 - 角色控制：`admin` / `user`
@@ -22,17 +23,16 @@
 - FastAPI
 - Jinja2
 - SQLAlchemy
-- LangGraph
 - OpenAI 兼容接口
 - MySQL 8.0+
 - SQLite
 
 ## 系统架构
 
-系统分为两套数据存储：
+系统分为两套数据库：
 
 1. `DB_URI`
-   业务数据库，供 `Text2SQL` 查询使用。
+   业务数据库，供技能执行 SQL 查询使用。
 
 2. `LOCAL_DB_URI`
    本地应用数据库，默认是 SQLite，用于存储：
@@ -46,11 +46,29 @@
 问答主链路：
 
 1. 用户输入自然语言问题
-2. `LangGraph` 执行语义解析、守卫、过滤修正、Schema 装载
-3. LLM 生成只读 SQL
-4. SQL 执行业务查询
+2. `router` 判断问题属于 `production`、`inventory`、`cross_domain` 或 `general`
+3. 对应 skill 执行守卫、过滤修正、Schema 选择、SQL 生成、SQL 执行和回答生成
+4. 如果是跨域问题，`composer` 会拆成多个 skill plan 并汇总结果
 5. 返回自然语言答案和表格结果
 6. 查询行为写入审计日志和聊天历史
+
+运行时核心模块：
+
+- [app.py](/home/y/llm/llm/app.py): FastAPI Web 应用入口
+- [core/workflow/orchestrator.py](/home/y/llm/llm/core/workflow/orchestrator.py): 主编排器
+- [core/router/intent_router.py](/home/y/llm/llm/core/router/intent_router.py): 问题路由
+- [core/router/filter_extractor.py](/home/y/llm/llm/core/router/filter_extractor.py): 共享过滤器抽取
+- [core/skills/base.py](/home/y/llm/llm/core/skills/base.py): skill 基类
+- [core/skills/production/skill.py](/home/y/llm/llm/core/skills/production/skill.py): 生产域技能
+- [core/skills/inventory/skill.py](/home/y/llm/llm/core/skills/inventory/skill.py): 库存域技能
+- [core/skills/generic/skill.py](/home/y/llm/llm/core/skills/generic/skill.py): 通用兜底技能
+- [core/composer/cross_domain.py](/home/y/llm/llm/core/composer/cross_domain.py): 跨域拆分与结果汇总
+- [core/runtime/skill_runtime.py](/home/y/llm/llm/core/runtime/skill_runtime.py): skill 公共运行时
+
+兼容说明：
+
+- [core/graph.py](/home/y/llm/llm/core/graph.py) 仍保留在仓库中，作为历史兼容实现
+- 当前 Web 应用主运行路径已经不再依赖 `core.graph`
 
 ## Web 注册规则
 
@@ -105,7 +123,7 @@ python3 init_sql.py
 ## 启动应用
 
 ```bash
-uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 启动后访问：
@@ -150,14 +168,22 @@ python3 manage_users.py reset-password alice newpassword
 ├── core/
 │   ├── auth_db.py          # 本地账号/角色/审计/聊天持久化
 │   ├── database.py         # 业务数据库访问
-│   ├── graph.py            # LangGraph 工作流
-│   ├── prompts.py          # 提示词
+│   ├── graph.py            # 历史兼容工作流，主流程已不依赖
+│   ├── workflow/
+│   │   └── orchestrator.py # 主编排入口
+│   ├── router/             # 路由与共享过滤器
+│   ├── skills/             # 领域技能
+│   ├── composer/           # 跨域汇总
+│   ├── runtime/            # skill 公共运行时
 │   ├── lexicon.py          # 轻量术语归一化
 │   ├── heuristics.py       # 规则修正
 │   └── config/             # intents / tables / heuristics 配置
 └── tests/
-    ├── eval_runner.py
-    └── goldens.json
+    ├── eval_runner.py      # 新架构评测入口
+    ├── goldens.json
+    ├── test_intent_router.py
+    ├── test_cross_domain_composer.py
+    └── test_filter_extractor.py
 ```
 
 ## 测试与校验
@@ -174,19 +200,23 @@ python3 -m compileall app.py core manage_users.py
 python3 tests/eval_runner.py
 ```
 
-注意：评测脚本依赖模型服务和业务数据库可用。
+说明：
+
+- `eval_runner.py` 会通过新 orchestrator 执行用例
+- 支持校验 `route`、`skill`、`sql_query` 中的字段命中
+- 仍依赖模型服务和业务数据库可用
 
 ## 当前实现说明
 
 - 前端已不再依赖 Chainlit
 - 聊天历史由本地库保存
-- LangGraph checkpoint 仍保存在本地 SQLite 文件 `langgraph_memory.db`
 - 查询接口默认只支持业务数据问答，不处理闲聊和无关问题
+- 主系统已经完成从单体图流程到 `router + skills + composer` 的迁移
+- 当前跨域查询是“多 skill 顺序执行 + 汇总”，后续可继续升级为更细粒度编排
 
 ## 后续可继续优化
 
 - 增加正式的 API 文档页说明
 - 为用户管理与注册补自动化测试
-- 将审计日志增加筛选、搜索和导出
-- 为聊天页增加流式响应和更细的执行状态提示
-
+- 将跨域汇总从顺序编排升级为并行执行
+- 将技能级 SQL 规则继续按正式生产库字段细化

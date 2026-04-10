@@ -1,6 +1,5 @@
 import json
 import os
-import sqlite3
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -8,7 +7,6 @@ from fastapi import FastAPI, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
@@ -31,7 +29,7 @@ from core.auth_db import (
     utcnow,
     verify_password,
 )
-from core.graph import get_workflow
+from core.workflow.orchestrator import get_workflow
 
 
 SESSION_SECRET = os.getenv("SESSION_SECRET", "change-this-session-secret")
@@ -175,30 +173,15 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
-def _thread_has_langgraph_checkpoint(thread_id: str, db_path: str = "langgraph_memory.db") -> bool:
-    try:
-        with sqlite3.connect(db_path) as conn:
-            row = conn.execute(
-                "SELECT 1 FROM checkpoints WHERE thread_id = ? LIMIT 1",
-                (thread_id,),
-            ).fetchone()
-        return row is not None
-    except sqlite3.Error:
-        return False
-
-
-async def run_chat_workflow(thread: ChatThread, question: str) -> dict:
-    inputs = {"question": question}
-    if not _thread_has_langgraph_checkpoint(thread.public_id):
-        inputs["chat_history"] = build_seed_history(thread)
-    config = {"configurable": {"thread_id": thread.public_id}}
-    async with AsyncSqliteSaver.from_conn_string("langgraph_memory.db") as saver:
-        engine = workflow.compile(checkpointer=saver)
-        return await engine.ainvoke(inputs, config=config)
-
-
 def _thinking_status_for_node(node_name: str) -> str:
     status_map = {
+        "route_intent": "🧭 正在识别问题所属领域...",
+        "cross_domain_compose": "🧩 正在评估是否需要跨域编排...",
+        "cross_domain_merge": "🧪 正在汇总多个领域的执行结果...",
+        "skill_dispatch": "🛠️ 正在选择可执行技能...",
+        "generic_skill": "🧰 正在执行通用数据查询技能...",
+        "production_skill": "🏭 正在执行生产域查询技能...",
+        "inventory_skill": "📦 正在执行库存域查询技能...",
         "parse_query": "🔍 正在理解语义并识别查询目标...",
         "check_guard": "🛡️ 正在进行安全与合规检查...",
         "refine_filters": "🧭 正在整理过滤条件...",
@@ -505,37 +488,36 @@ async def chat_api(request: Request, public_id: str, payload: ChatPayload):
             db_history = SessionLocal()
             try:
                 stream_thread = db_history.query(ChatThread).filter(ChatThread.public_id == thread_public_id).first()
-                if stream_thread and not _thread_has_langgraph_checkpoint(thread_public_id):
+                if stream_thread:
                     inputs["chat_history"] = build_seed_history(stream_thread)
             finally:
                 db_history.close()
 
             config = {"configurable": {"thread_id": thread_public_id}}
-            async with AsyncSqliteSaver.from_conn_string("langgraph_memory.db") as saver:
-                engine = workflow.compile(checkpointer=saver)
-                async for output in engine.astream(inputs, config=config):
-                    for node_name, node_output in output.items():
-                        state_snapshot.update(node_output or {})
-                        status_text = _thinking_status_for_node(node_name)
-                        if status_text:
-                            yield _ndjson_line({"type": "status", "node": node_name, "message": status_text})
-                        if node_name == "generate_answer":
-                            final_answer = node_output.get("final_answer", "")
-                            metadata = {
-                                "columns": state_snapshot.get("table_columns") or [],
-                                "rows": state_snapshot.get("db_result") or [],
-                                "row_count": state_snapshot.get("row_count"),
-                                "truncated": bool(state_snapshot.get("truncated")),
-                                "sql_query": state_snapshot.get("sql_query", ""),
-                            }
-                            final_payload = {
-                                "type": "final",
-                                "answer": final_answer,
-                                "thread_id": thread_public_id,
-                                "thread_title": thread_title,
-                                "metadata": metadata,
-                            }
-                            yield _ndjson_line(final_payload)
+            engine = workflow.compile()
+            async for output in engine.astream(inputs, config=config):
+                for node_name, node_output in output.items():
+                    state_snapshot.update(node_output or {})
+                    status_text = _thinking_status_for_node(node_name)
+                    if status_text:
+                        yield _ndjson_line({"type": "status", "node": node_name, "message": status_text})
+                    if node_name == "generate_answer":
+                        final_answer = node_output.get("final_answer", "")
+                        metadata = {
+                            "columns": state_snapshot.get("table_columns") or [],
+                            "rows": state_snapshot.get("db_result") or [],
+                            "row_count": state_snapshot.get("row_count"),
+                            "truncated": bool(state_snapshot.get("truncated")),
+                            "sql_query": state_snapshot.get("sql_query", ""),
+                        }
+                        final_payload = {
+                            "type": "final",
+                            "answer": final_answer,
+                            "thread_id": thread_public_id,
+                            "thread_title": thread_title,
+                            "metadata": metadata,
+                        }
+                        yield _ndjson_line(final_payload)
 
             if final_payload:
                 db_save = SessionLocal()
