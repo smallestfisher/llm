@@ -218,6 +218,8 @@ PYTHONPATH=. python3 tests/eval_runner.py
   当前架构说明
 - [FIVE_SKILL_MAPPING.md](/home/y/llm/llm/FIVE_SKILL_MAPPING.md)
   当前 11 张表到 5-skill 的映射
+- [PRODUCTION_TUNING_FLOW.md](/home/y/llm/llm/PRODUCTION_TUNING_FLOW.md)
+  生产库字段精调流程
 - [PRODUCTION_TUNING_TEMPLATE.md](/home/y/llm/llm/PRODUCTION_TUNING_TEMPLATE.md)
   生产库字段精调模板
 
