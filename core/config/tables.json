@@ -1,94 +1,223 @@
 {
-  "daily_inventory": {
-    "description": "每日库存快照表，记录各仓库各产品的可用库存和安全库存。时间粒度为日。",
-    "columns": ["id", "report_date (上报日期)", "factory_code (工厂代码)", "warehouse_code (仓库类型)", "product_code (产品编码)", "available_qty (可用库存量)", "safety_stock (安全库存值)"],
-    "date_col": "report_date",
+  "v_demand": {
+    "description": "V版生产需求表(Vendor/Customer Demand)，记录原始市场预测。时间粒度为月、每周一版。横向表。",
+    "columns": [
+      "id",
+      "PM_VERSION (版本号)",
+      "FGCODE (生产需求号)",
+      "SBU_DESC (SBU描述)",
+      "CUSTOMER (客户)",
+      "MONTH (需求起始月份)",
+      "REQUIREMENT_QTY (需求起始月份 需求数量)",
+      "NEXT_REQUIREMENT (需求起始月份第2个月 需求数量)",
+      "LAST_REQUIREMENT (需求起始月份第3个月 需求数量)",
+      "MONTH4 (需求起始月份第4个月 需求数量)",
+      "MONTH5 (需求起始月份第5个月 需求数量)",
+      "MONTH6 (需求起始月份第6个月 需求数量)",
+      "MONTH7 (需求起始月份第7个月 需求数量)"
+    ],
+    "MAIN_KEY": "PM_VERSION,FGCODE,SBU_DESC,CUSTOMER",
+    "month_col": "MONTH",
+    "version_col": "PM_VERSION",
     "relationships": {
-      "product_code": "product_attributes.product_code"
-    }
-  },
-  "daily_schedule": {
-    "description": "每日排产计划表，记录各产线各产品的目标产量。时间粒度为日。",
-    "columns": ["id", "work_date (排产日期)", "factory_code (工厂代码)", "line_code (产线/机台)", "product_code (产品编码)", "shift (班次: Day/Night)", "target_qty (计划产出量)"],
-    "date_col": "work_date",
-    "relationships": {
-      "product_code": "product_attributes.product_code, product_mapping.product_code"
-    }
-  },
-  "monthly_plan_approved": {
-    "description": "已审批的月度生产计划表，作为考核基准。时间粒度为月。",
-    "columns": ["id", "plan_month (计划月份)", "factory_code (工厂代码)", "product_code (产品编码)", "target_glass_qty (目标投片量)", "target_panel_qty (目标产出量)", "version (版本号)"],
-    "month_col": "plan_month",
-    "relationships": {
-      "product_code": "product_attributes.product_code"
-    }
-  },
-  "oms_inventory": {
-    "description": "OMS订单系统库存表，包含在途和客户Hub库存。用于计算齐套性。",
-    "columns": ["id", "report_date (上报日期)", "product_code (产品编码)", "customer_name (客户名称)", "in_transit_qty (在途量)", "hub_qty (自备仓量)", "customer_hub_qty (客户仓量)"],
-    "date_col": "report_date",
-    "relationships": {
-      "product_code": "product_attributes.product_code"
+      "FGCODE": "product_attributes.product_ID, product_mapping.FGCODE"
     }
   },
   "p_demand": {
-    "description": "生产需求表(Production Demand)，对应工厂端的交付承诺。时间粒度为月。",
-    "columns": ["id", "p_demand_no (生产需求号)", "v_demand_no (关联客户需求号)", "product_code (产品编码)", "commit_month (承诺月份)", "commit_qty (承诺交付量)", "status (状态: Accepted/Partial/Cancelled)"],
-    "month_col": "commit_month",
+    "description": "P版生产需求表(Production Demand)，对应工厂端的需求产出数量。时间粒度为月、每周一版。横向表。",
+    "columns": [
+      "id",
+      "PM_VERSION (版本号)",
+      "FGCODE (生产需求号)",
+      "SBU_DESC (SBU描述)",
+      "BU_DESC (BU描述)",
+      "CUSTOMER (客户)",
+      "MONTH (需求起始月份)",
+      "REQUIREMENT_QTY (需求起始月份 需求数量)",
+      "NEXT_REQUIREMENT (需求起始月份第2个月 需求数量)",
+      "LAST_REQUIREMENT (需求起始月份第3个月 需求数量)",
+      "MONTH4 (需求起始月份第4个月 需求数量)",
+      "MONTH5 (需求起始月份第5个月 需求数量)",
+      "MONTH6 (需求起始月份第6个月 需求数量)",
+      "MONTH7 (需求起始月份第7个月 需求数量)"
+    ],
+    "MAIN_KEY": "PM_VERSION,FGCODE,SBU_DESC,BU_DESC,CUSTOMER",
+    "month_col": "MONTH",
+    "version_col": "PM_VERSION",
     "relationships": {
-      "v_demand_no": "v_demand.demand_no",
-      "product_code": "product_attributes.product_code"
+      "FGCODE": "product_attributes.product_ID, product_mapping.FGCODE"
+    }
+  },
+  "daily_inventory": {
+    "description": "每日库存快照表，记录各仓库各产品的可用库存、Hold库存。时间粒度为日。",
+    "columns": [
+      "id",
+      "report_date (上报日期)",
+      "factory_code (工厂代码)",
+      "ERP_FACTORY (ERP工厂)",
+      "ERP_LOCATION (ERP库位)",
+      "product_ID (产品型号)",
+      "PRODUCTION_TYPE (产品类型)",
+      "GRADE (产品等级)",
+      "CHECKINCODE (产品Check In Code)",
+      "TTL_Qty (TTL库存量)",
+      "HOLD_Qty (Hold库存量)"
+    ],
+    "MAIN_KEY": "report_date,factory_code,ERP_FACTORY,ERP_LOCATION,product_ID,PRODUCTION_TYPE,GRADE,CHECKINCODE",
+    "date_col": "report_date",
+    "relationships": {
+      "product_ID": "product_attributes.product_ID"
+    }
+  },
+  "daily_PLAN": {
+    "description": "每日排产计划表，记录各工厂各产品的投入目标产量。时间粒度为日。",
+    "columns": [
+      "id",
+      "PLAN_date (排产日期)",
+      "factory_code (工厂代码)",
+      "product_ID (产品编码)",
+      "target_qty (计划产出量)"
+    ],
+    "MAIN_KEY": "PLAN_date,factory_code,product_ID",
+    "date_col": "PLAN_date",
+    "relationships": {
+      "product_ID": "product_attributes.product_ID, product_mapping.FGCODE"
+    }
+  },
+  "monthly_plan_approved": {
+    "description": "已审批的月度投入产出计划表，作为考核基准。按月份管理，并包含日维度排产日期。",
+    "columns": [
+      "id",
+      "plan_month (计划月份)",
+      "PLAN_date (排产日期)",
+      "factory_code (工厂代码)",
+      "product_ID (产品编码)",
+      "target_IN_glass_qty (目标投入Glass量)",
+      "target_in_panel_qty (目标投入panel量)",
+      "target_Out_glass_qty (目标产出Glass量)",
+      "target_Out_panel_qty (目标产出panel量)"
+    ],
+    "MAIN_KEY": "plan_month,PLAN_date,factory_code,product_ID",
+    "month_col": "plan_month",
+    "date_col": "PLAN_date",
+    "relationships": {
+      "product_ID": "product_attributes.product_ID"
+    }
+  },
+  "oms_inventory": {
+    "description": "OMS全渠道库存表，包含在途和客户Hub库存，用于计算期初库存。时间粒度为月。",
+    "columns": [
+      "id",
+      "report_month (月份)",
+      "product_ID (产品型号)",
+      "SBU_DESC (SBU描述)",
+      "BU_DESC (BU描述)",
+      "CUSTOMER (客户)",
+      "ERP_FACTORY (ERP工厂)",
+      "ERP_LOCATION (ERP库位)",
+      "LGORT_DL (库存大类)",
+      "LGORT_LX (库存类型)",
+      "GRADE_FL (等级分类)",
+      "GRADE (等级)",
+      "glass_qty (Glass量)",
+      "panel_qty (panel量)",
+      "ONE_AGE_panel_qty (0~1月库龄库存panel量)",
+      "TWO_AGE_panel_qty (1~2月库龄库存panel量)",
+      "THREE_AGE_panel_qty (2~3月库龄库存panel量)",
+      "FOUR_AGE_panel_qty (3~6月库龄库存panel量)",
+      "FIVE_AGE_panel_qty (6~12月库龄库存panel量)",
+      "SIX_AGE_panel_qty (12~24月库龄库存panel量)",
+      "SEVEN_AGE_panel_qty (24~36月库龄库存panel量)",
+      "EUGHT_AGE_panel_qty (36月以上库龄库存panel量)"
+    ],
+    "MAIN_KEY": "report_month,product_ID,SBU_DESC,BU_DESC,CUSTOMER,ERP_FACTORY,ERP_LOCATION,LGORT_DL,LGORT_LX,GRADE_FL,GRADE",
+    "month_col": "report_month",
+    "relationships": {
+      "product_ID": "product_attributes.product_ID"
     }
   },
   "product_attributes": {
-    "description": "产品属性维表，包含技术族、应用领域、交付周期等静态信息。",
-    "columns": ["id", "product_code (产品编码)", "tech_family (技术族: OLED/LCD等)", "application (应用领域: Mobile/TV等)", "std_lead_time_days (标准周期)", "moq (最小起订量)", "life_cycle (生命周期: NPI/MP/EOL)"]
+    "description": "产品属性维表，包含产品型号、产品关键分类等静态信息。",
+    "columns": [
+      "id",
+      "product_ID (产品型号)",
+      "application (应用领域: Mobile/TV等)",
+      "CUT_NUM (切割数量:Glass切多少Panel)",
+      "common_categories (常用分类)",
+      "IS_OXIDE (是否OXide产品)",
+      "IS_XPS (是否XPS产品)",
+      "IS_sloc (是否Sloc产品)",
+      "IS_cOATER (是否cOATER产品)",
+      "IS_OA (是否OA产品)",
+      "IS_Notch (是否NotchR产品)"
+    ],
+    "MAIN_KEY": "product_ID"
   },
   "product_mapping": {
-    "description": "产品生产关系映射表，记录产品与玻璃基板尺寸、切割效率及工厂偏好。",
-    "columns": ["id", "product_code (产品编码)", "glass_substrate_size (基板世代)", "cut_efficiency (切割效率)", "preferred_factory (主选工厂)", "alternative_factory (备选工厂)"],
+    "description": "产品生产关系映射表，记录产品与玻璃基板尺寸、产品转换关系。",
+    "columns": [
+      "id",
+      "FGCODE (成品型号)",
+      "Cell No (Cell工厂投入料号)",
+      "Array No (Array工厂投入料号)",
+      "CF No (CF工厂投入料号)"
+    ],
+    "MAIN_KEY": "FGCODE",
     "relationships": {
-      "product_code": "product_attributes.product_code"
+      "FGCODE": "product_attributes.product_ID"
     }
   },
   "production_actuals": {
-    "description": "生产实绩表，记录产线实际产出、投入、不良、停机等，支持质量追溯。",
-    "columns": ["id", "work_date (生产日期)", "line_code (产线编号)", "product_code (产品编码)", "input_qty (投料数)", "output_qty (产出数)", "defect_qty (不良数)", "defect_type_code (不良类型: Mura/Particle等)", "downtime_hours (停机时长H)", "yield_rate (良率%)"],
+    "description": "生产实绩表，记录产线实际产出、投入、报废。时间粒度为日。",
+    "columns": [
+      "id",
+      "work_date (生产日期)",
+      "FACTORY (工厂)",
+      "product_ID (产品型号)",
+      "act_type (分类区分投入/产出/报废)",
+      "GLS_qty (Glass数)",
+      "Panel_qty (Panel数)",
+      "defect_qty (不良数)"
+    ],
+    "MAIN_KEY": "work_date,FACTORY,product_ID,act_type",
     "date_col": "work_date",
     "relationships": {
-      "product_code": "product_attributes.product_code, product_mapping.product_code"
+      "product_ID": "product_attributes.product_ID, product_mapping.FGCODE"
     }
   },
   "sales_financial_perf": {
-    "description": "销售与财务表现表，记录销量、单价、营收和毛利。时间粒度为月。",
-    "columns": ["id", "report_month (结算月份)", "product_code (产品编码)", "sales_qty (实际销量)", "unit_price_usd (平均单价USD)", "revenue_usd (总营收USD)", "gross_margin_pct (毛利率%)"],
+    "description": "销售与财务实绩表，记录财务业绩、销售业绩。时间粒度为月。",
+    "columns": [
+      "id",
+      "report_month (结算月份)",
+      "SBU_DESC (SBU描述)",
+      "BU_DESC (BU描述)",
+      "CUSTOMER (客户)",
+      "FGCODE (产品编码)",
+      "sales_qty (销售业绩)",
+      "FINANCIAL_qty (财务业绩)"
+    ],
+    "MAIN_KEY": "report_month,SBU_DESC,BU_DESC,CUSTOMER,FGCODE",
     "month_col": "report_month",
     "relationships": {
-      "product_code": "product_attributes.product_code"
-    }
-  },
-  "v_demand": {
-    "description": "客户需求表(Vendor/Customer Demand)，记录原始市场预测。时间粒度为月。",
-    "columns": ["id", "demand_no (需求号)", "customer_name (客户名称)", "product_code (产品编码)", "forecast_month (预测月份)", "forecast_qty (预测数量)", "create_time (录入时间)"],
-    "month_col": "forecast_month",
-    "relationships": {
-      "product_code": "product_attributes.product_code"
+      "FGCODE": "product_attributes.product_ID, product_mapping.FGCODE"
     }
   },
   "weekly_rolling_plan": {
-    "description": "周滚动计划表，介于月计划与日排产之间。包含调整原因。",
-    "columns": ["id", "plan_month (所属月份)", "week_no (周次)", "factory_code (工厂代码)", "product_code (产品编码)", "planned_qty (周计划产出)", "adjust_reason (调整原因)"],
-    "month_col": "plan_month",
+    "description": "周滚动计划表，介于月计划与日排产之间。时间粒度为日、每周一版。",
+    "columns": [
+      "id",
+      "PM_VERSION (版本号)",
+      "plan_date (计划日期)",
+      "factory (工厂)",
+      "product_ID (产品编码)",
+      "plan_qty (日计划投入)"
+    ],
+    "MAIN_KEY": "PM_VERSION,plan_date,factory,product_ID",
+    "date_col": "plan_date",
+    "version_col": "PM_VERSION",
     "relationships": {
-      "product_code": "product_attributes.product_code"
-    }
-  },
-  "work_in_progress": {
-    "description": "在制快照表(WIP)，支持优先级排产与瓶颈分析。记录当前产线上的半成品分布。",
-    "columns": ["id", "lot_id (批次号)", "factory_code (工厂代码)", "product_code (产品编码)", "current_process (当前工序)", "process_entry_time (入站时间)", "wip_qty (在制数量)", "priority (优先级1-5)", "hold_flag (是否冻结)", "update_time (更新时间)"],
-    "date_col": "update_time",
-    "relationships": {
-      "product_code": "product_attributes.product_code"
+      "product_ID": "product_attributes.product_ID"
     }
   }
 }

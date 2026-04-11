@@ -14,6 +14,7 @@ class CrossDomainComposeResult:
     tables: list[str] = field(default_factory=list)
     execution_order: list[str] = field(default_factory=list)
     domain_tables: dict[str, list[str]] = field(default_factory=dict)
+    domain_questions: dict[str, str] = field(default_factory=dict)
     reason: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -24,6 +25,7 @@ class CrossDomainComposeResult:
             "cross_domain_tables": self.tables,
             "cross_domain_execution_order": self.execution_order,
             "cross_domain_reason": self.reason,
+            "cross_domain_questions": self.domain_questions,
             "use_legacy_fallback": self.use_legacy_fallback,
         }
         payload.update(self.metadata)
@@ -50,12 +52,14 @@ class CrossDomainComposer:
     def compose(self, decision: RouteDecision) -> CrossDomainComposeResult:
         execution_order: list[str] = []
         domain_tables: dict[str, list[str]] = {}
+        domain_questions: dict[str, str] = {}
         for domain in decision.matched_domains:
             if domain not in execution_order:
                 execution_order.append(domain)
             available_tables = get_tables_for_domain(domain)
             selected = [table for table in decision.target_tables if table in available_tables]
             domain_tables[domain] = selected
+            domain_questions[domain] = self._build_domain_question(domain=domain, original_question="")
 
         if not execution_order:
             return CrossDomainComposeResult(
@@ -72,9 +76,13 @@ class CrossDomainComposer:
             tables=list(decision.target_tables),
             execution_order=execution_order,
             domain_tables=domain_tables,
+            domain_questions=domain_questions,
             reason="decomposed into sequential domain skill plans",
             metadata={"compose_mode": "sequential_skills"},
         )
+
+    def build_domain_question(self, domain: str, original_question: str) -> str:
+        return self._build_domain_question(domain=domain, original_question=original_question)
 
     def merge(self, question: str, executions: list[SkillExecution]) -> CrossDomainMergeResult:
         successful_domains: list[str] = []
@@ -130,6 +138,9 @@ class CrossDomainComposer:
         labels = {
             "inventory": "库存域",
             "production": "生产域",
+            "planning": "计划域",
+            "demand": "需求域",
+            "sales": "销售财务域",
         }
         return labels.get(domain, domain)
 
@@ -138,3 +149,34 @@ class CrossDomainComposer:
         if not line:
             return ""
         return line[:120] + ("..." if len(line) > 120 else "")
+
+    def _build_domain_question(self, *, domain: str, original_question: str) -> str:
+        task_lines = {
+            "inventory": (
+                "仅提取库存侧事实，关注 TTL/HOLD/OMS/库龄/客户仓，不做计划差异或需求覆盖判断。",
+                "如果原问题涉及支撑、缺料、影响，只返回库存基础量和风险线索，不自行推导计划值。",
+            ),
+            "planning": (
+                "仅提取计划侧事实，关注日排产、周滚计划、审批版月计划。",
+                "不要把 daily_PLAN 当实际产出，不要把 production_actuals 的实际结果或销售结果映射到计划表。",
+            ),
+            "production": (
+                "仅提取生产实绩侧事实，关注投入、产出、报废、不良。",
+                "不要用计划表替代实际，不要回答库存覆盖、需求承诺或销售财务口径。",
+            ),
+            "demand": (
+                "仅提取需求与承诺侧事实，关注 V版 forecast、P版 commit 与横表月份列。",
+                "V版/P版优先决定使用哪张表，不要把“V版”或“P版”误当成 PM_VERSION 的字面值。",
+            ),
+            "sales": (
+                "仅提取销售财务侧事实，关注 sales_qty 和 FINANCIAL_qty。",
+                "不要虚构 sales_actual、revenue、gross_margin 等不存在的表或字段，也不要替用户做计划对比。",
+            ),
+        }.get(domain, ("仅提取当前业务域可直接回答的事实。",))
+        bullet_text = "\n".join(f"- {line}" for line in task_lines)
+        return (
+            f"原始问题：{original_question}\n"
+            f"当前是跨域拆解中的 {self._domain_label(domain)} 子任务。\n"
+            "请严格只回答当前域可直接查询的事实，不要跨到其他域补字段、补表或补结论。\n"
+            f"{bullet_text}"
+        )

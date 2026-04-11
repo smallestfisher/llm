@@ -8,51 +8,82 @@ from core.runtime.state import RouteDecision
 _DOMAIN_KEYWORDS = {
     "production": {
         "生产": 2.0,
-        "排产": 2.0,
-        "计划": 1.2,
-        "月计划": 2.0,
-        "周计划": 2.0,
-        "实绩": 2.0,
-        "产出": 1.5,
+        "实绩": 2.4,
+        "产出": 2.4,
+        "投入": 2.4,
+        "报废": 2.6,
         "产线": 1.8,
         "线别": 1.6,
-        "良率": 2.2,
-        "不良": 2.0,
-        "停机": 2.0,
+        "不良": 2.6,
         "投料": 1.5,
-        "工序": 1.5,
-        "在制": 1.6,
-        "wip": 1.6,
-        "需求": 1.3,
-        "forecast": 1.6,
-        "commit": 1.6,
-        "交付": 1.0,
-        "销售": 1.1,
-        "营收": 1.4,
+        "实际": 1.6,
         "风险": 0.4,
+    },
+    "planning": {
+        "排产": 2.6,
+        "计划": 1.8,
+        "日计划": 2.0,
+        "日排产": 2.0,
+        "月计划": 2.2,
+        "周计划": 2.2,
+        "周滚": 2.0,
+        "滚动计划": 2.0,
+        "版本": 1.8,
+        "审批版": 1.8,
+        "锁版": 1.8,
+        "计划兑现": 1.5,
+        "计划偏差": 1.5,
     },
     "inventory": {
         "库存": 2.4,
-        "可用库存": 2.4,
-        "安全库存": 2.2,
         "在途": 2.0,
         "hub": 2.0,
         "缺货": 2.0,
         "齐套": 2.0,
+        "支撑": 1.0,
+        "覆盖": 1.0,
         "仓库": 1.8,
         "仓": 1.2,
         "备货": 1.4,
         "客户仓": 2.0,
         "库存覆盖": 2.0,
         "oms": 2.2,
-        "wip": 1.0,
-        "在制": 1.0,
+        "ttl": 1.8,
+        "hold": 1.8,
+        "期初": 1.8,
+        "库龄": 2.0,
+        "库位": 1.4,
+        "erp": 1.2,
         "风险": 0.4,
         "缺料": 2.0,
     },
+    "demand": {
+        "需求": 2.2,
+        "forecast": 2.6,
+        "commit": 2.6,
+        "承诺": 2.2,
+        "承诺需求": 2.2,
+        "客户需求": 2.2,
+        "覆盖": 1.6,
+        "缺口": 1.6,
+        "v版": 2.6,
+        "p版": 2.6,
+        "版本": 1.2,
+    },
+    "sales": {
+        "销售": 2.6,
+        "销售量": 2.6,
+        "销量": 2.6,
+        "出货": 1.8,
+        "财务": 2.2,
+        "财务业绩": 2.6,
+        "经营": 1.8,
+        "收入": 1.6,
+        "业绩": 1.5,
+    },
 }
 
-_CONNECTOR_KEYWORDS = ("对比", "联查", "关联", "联合", "同时", "一起", "匹配", "结合", "跨域")
+_CONNECTOR_KEYWORDS = ("对比", "对照", "联查", "关联", "联合", "同时", "一起", "匹配", "结合", "跨域", "支撑", "覆盖", "影响")
 _ROUTE_THRESHOLD = 2.5
 
 
@@ -73,25 +104,31 @@ def _domain_score(question: str, domain: str) -> tuple[float, list[str]]:
 def _suggest_tables(domain: str, question: str) -> list[str]:
     q = question.lower()
     if domain == "production":
-        if any(token in q for token in ("良率", "不良", "停机", "产出", "实绩")):
+        if any(token in q for token in ("报废", "不良", "产出", "实绩", "投入")):
             return ["production_actuals", "product_attributes", "product_mapping"]
-        if any(token in q for token in ("周计划", "周排产", "调整原因")):
+        return ["production_actuals", "product_attributes", "product_mapping"]
+    if domain == "planning":
+        if any(token in q for token in ("周计划", "周排产", "滚动计划", "版本", "周滚")):
             return ["weekly_rolling_plan", "product_attributes", "product_mapping"]
-        if any(token in q for token in ("月计划", "月度计划")):
+        if any(token in q for token in ("月计划", "月度计划", "审批版")):
             return ["monthly_plan_approved", "product_attributes", "product_mapping"]
-        if any(token in q for token in ("需求", "forecast", "commit")):
-            return ["p_demand", "v_demand", "product_attributes"]
-        if any(token in q for token in ("在制", "wip", "批次", "工序")):
-            return ["work_in_progress", "product_attributes", "product_mapping"]
-        return ["daily_schedule", "product_attributes", "product_mapping"]
+        return ["daily_PLAN", "product_attributes", "product_mapping"]
     if domain == "inventory":
-        if any(token in q for token in ("在途", "hub", "客户端库存", "客户仓", "oms")):
+        if any(token in q for token in ("在途", "hub", "客户端库存", "客户仓", "oms", "库龄", "期初")):
             return ["oms_inventory", "product_attributes"]
-        if any(token in q for token in ("排产", "齐套", "支撑")):
-            return ["daily_inventory", "daily_schedule", "work_in_progress", "product_attributes"]
-        if any(token in q for token in ("在制", "wip")):
-            return ["work_in_progress", "daily_inventory", "product_attributes"]
+        if any(token in q for token in ("ttl", "hold", "库位", "erp", "checkincode")):
+            return ["daily_inventory", "product_attributes", "product_mapping"]
+        if any(token in q for token in ("齐套", "支撑", "缺料")):
+            return ["daily_inventory", "oms_inventory", "product_attributes"]
         return ["daily_inventory", "product_attributes", "product_mapping"]
+    if domain == "demand":
+        if any(token in q for token in ("v版", "forecast", "原始需求", "客户需求")):
+            return ["v_demand", "product_attributes", "product_mapping"]
+        if any(token in q for token in ("p版", "commit", "承诺需求", "承诺")):
+            return ["p_demand", "product_attributes", "product_mapping"]
+        return ["p_demand", "v_demand", "product_attributes"]
+    if domain == "sales":
+        return ["sales_financial_perf", "product_attributes", "product_mapping"]
     return []
 
 
@@ -103,7 +140,7 @@ def route_question(question: str) -> RouteDecision:
 
     explicit_hits = explicit_table_hits(q)
     scored: list[tuple[str, float, list[str]]] = []
-    for domain in ("production", "inventory"):
+    for domain in ("production", "planning", "inventory", "demand", "sales"):
         score, domain_table_hits = _domain_score(q, domain)
         scored.append((domain, score, domain_table_hits))
 
@@ -118,6 +155,8 @@ def route_question(question: str) -> RouteDecision:
         len(active_domains) > 1 and (cross_domain_signal or second_score >= top_score * 0.65)
     ) or (
         cross_domain_signal and top_score >= 2.0 and second_score >= 1.5
+    ) or (
+        top_score >= 2.5 and second_score >= 1.8 and cross_domain_signal
     ):
         matched_domains = list(active_domains) if len(active_domains) > 1 else [top_domain, second_domain]
         combined_tables: list[str] = []

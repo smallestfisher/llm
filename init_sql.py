@@ -1,391 +1,590 @@
-import pymysql
+import os
 import random
 from datetime import datetime, timedelta
 
-# ==========================================
-# 1. 数据库连接配置 (请根据你的本地环境修改)
-# ==========================================
+import pymysql
+
+
 DB_CONFIG = {
-    'host': '172.17.0.2',
-    'port': 3306,
-    'user': 'root',
-    'password': '021598', # <-- 修改为你的MySQL密码
-    'charset': 'utf8mb4'
+    "host": os.getenv("MYSQL_HOST", "172.17.0.2"),
+    "port": int(os.getenv("MYSQL_PORT", "3306")),
+    "user": os.getenv("MYSQL_USER", "root"),
+    "password": os.getenv("MYSQL_PASSWORD", "021598"),
+    "charset": "utf8mb4",
+    "autocommit": False,
 }
-DB_NAME = 'boe_planner_db' # 将要创建的数据库名称
+DB_NAME = os.getenv("MYSQL_DB", "boe_planner_db")
 
-# ==========================================
-# 2. BOE 业务基础主数据定义 (纯英文/代码化)
-# ==========================================
-FACTORIES = ['B4_BJ', 'B7_CD', 'B11_MY', 'B17_WH', 'B20_BJ'] 
-CUSTOMERS = ['Apple', 'Samsung', 'Huawei', 'Honor', 'Hisense', 'Lenovo', 'Dell']
-TECH_TYPES = ['OLED_Flex', 'OLED_Rigid', 'LCD_IPS', 'LCD_VA', 'Mini_LED']
-RESOLUTIONS = ['FHD', '2K', '4K', '8K']
-SIZES = ['6.1', '6.7', '14.0', '27.0', '65.0', '75.0', '86.0']
-PROCESSES = ['Array', 'Cell', 'Module']
-WAREHOUSES = ['RAW', 'WIP', 'FG', 'VMI']
-APPS = ['Mobile', 'IT', 'TV', 'Vehicle', 'Wearable']
-LIFECYCLES = ['NPI', 'MP', 'EOL']
-PD_STATUSES = ['Accepted', 'Partial', 'Cancelled']
-ADJUST_REASONS = ['Normal', 'Catch_up', 'Material_Delay', 'EQP_Down', 'None']
-GLASS_SIZES = ['Gen_6', 'Gen_8_5', 'Gen_10_5']
 
-# 预生成产品料号池
-PRODUCT_CODES = []
-for i in range(1, 1050):
-    tech = random.choice(TECH_TYPES)
-    size = random.choice(SIZES)
-    res = random.choice(RESOLUTIONS)
-    PRODUCT_CODES.append(f"BOE_{tech}_{size.replace('.','_')}_{res}_{i:04d}")
+FACTORIES = ["B4_BJ", "B7_CD", "B11_MY", "B17_WH", "B20_BJ"]
+ERP_FACTORIES = ["BJ01", "CD01", "MY01", "WH01"]
+ERP_LOCATIONS = ["FG01", "FG02", "HOLD01", "OMS01"]
+CUSTOMERS = ["Apple", "Samsung", "Huawei", "Honor", "Lenovo", "Dell"]
+SBU_LIST = ["Mobile", "IT", "TV"]
+BU_LIST = ["BU_A", "BU_B", "BU_C"]
+APPLICATIONS = ["Mobile", "TV", "IT", "Vehicle"]
+COMMON_CATEGORIES = ["HighRunner", "Value", "Flagship", "Project"]
+VERSION_POOL = ["2026W01", "2026W02", "2026W03", "2026W04"]
+GRADES = ["A", "B", "C"]
+PRODUCTION_TYPES = ["MP", "NPI"]
 
-def random_date(start_date, end_date):
-    time_between_dates = end_date - start_date
-    days_between_dates = max(time_between_dates.days, 1)
-    random_number_of_days = random.randrange(days_between_dates + 1)
-    return start_date + timedelta(days=random_number_of_days)
 
-# 默认生成最近一年的数据
-end_dt = datetime.now()
-start_dt = end_dt - timedelta(days=365)
+def random_day(start: datetime, end: datetime) -> datetime:
+    return start + timedelta(days=random.randint(0, max((end - start).days, 1)))
 
-def run_db_insertion():
-    print(f"[*] 正在连接 MySQL 8.0: {DB_CONFIG['host']}:{DB_CONFIG['port']} ...")
+
+def month_str(base: datetime, offset: int = 0) -> str:
+    year = base.year + ((base.month - 1 + offset) // 12)
+    month = ((base.month - 1 + offset) % 12) + 1
+    return f"{year:04d}-{month:02d}"
+
+
+def build_product_catalog(size: int = 120) -> list[dict]:
+    catalog: list[dict] = []
+    for idx in range(1, size + 1):
+        family = random.choice(["OLED", "LCD", "OXIDE", "XPS"])
+        product_id = f"PANEL_{family}_{idx:04d}"
+        catalog.append(
+            {
+                "product_ID": product_id,
+                "FGCODE": product_id,
+                "cell_no": f"CELL_{idx:04d}",
+                "array_no": f"ARRAY_{idx:04d}",
+                "cf_no": f"CF_{idx:04d}",
+                "application": random.choice(APPLICATIONS),
+                "cut_num": random.choice([2, 4, 6, 8, 12]),
+                "common_categories": random.choice(COMMON_CATEGORIES),
+                "is_oxide": 1 if family == "OXIDE" else 0,
+                "is_xps": 1 if family == "XPS" else 0,
+                "is_sloc": random.choice([0, 1]),
+                "is_coater": random.choice([0, 1]),
+                "is_oa": random.choice([0, 1]),
+                "is_notch": random.choice([0, 1]),
+            }
+        )
+    return catalog
+
+
+CREATE_SQL = {
+    "v_demand": """
+        CREATE TABLE IF NOT EXISTS `v_demand` (
+          `id` BIGINT AUTO_INCREMENT,
+          `PM_VERSION` VARCHAR(20) NOT NULL,
+          `FGCODE` VARCHAR(64) NOT NULL,
+          `SBU_DESC` VARCHAR(64) NOT NULL,
+          `CUSTOMER` VARCHAR(64) NOT NULL,
+          `MONTH` VARCHAR(7) NOT NULL,
+          `REQUIREMENT_QTY` INT NOT NULL,
+          `NEXT_REQUIREMENT` INT NOT NULL,
+          `LAST_REQUIREMENT` INT NOT NULL,
+          `MONTH4` INT NOT NULL,
+          `MONTH5` INT NOT NULL,
+          `MONTH6` INT NOT NULL,
+          `MONTH7` INT NOT NULL,
+          PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    "p_demand": """
+        CREATE TABLE IF NOT EXISTS `p_demand` (
+          `id` BIGINT AUTO_INCREMENT,
+          `PM_VERSION` VARCHAR(20) NOT NULL,
+          `FGCODE` VARCHAR(64) NOT NULL,
+          `SBU_DESC` VARCHAR(64) NOT NULL,
+          `BU_DESC` VARCHAR(64) NOT NULL,
+          `CUSTOMER` VARCHAR(64) NOT NULL,
+          `MONTH` VARCHAR(7) NOT NULL,
+          `REQUIREMENT_QTY` INT NOT NULL,
+          `NEXT_REQUIREMENT` INT NOT NULL,
+          `LAST_REQUIREMENT` INT NOT NULL,
+          `MONTH4` INT NOT NULL,
+          `MONTH5` INT NOT NULL,
+          `MONTH6` INT NOT NULL,
+          `MONTH7` INT NOT NULL,
+          PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    "daily_inventory": """
+        CREATE TABLE IF NOT EXISTS `daily_inventory` (
+          `id` BIGINT AUTO_INCREMENT,
+          `report_date` DATE NOT NULL,
+          `factory_code` VARCHAR(32) NOT NULL,
+          `ERP_FACTORY` VARCHAR(32) NOT NULL,
+          `ERP_LOCATION` VARCHAR(32) NOT NULL,
+          `product_ID` VARCHAR(64) NOT NULL,
+          `PRODUCTION_TYPE` VARCHAR(32) NOT NULL,
+          `GRADE` VARCHAR(8) NOT NULL,
+          `CHECKINCODE` VARCHAR(32) NOT NULL,
+          `TTL_Qty` INT NOT NULL,
+          `HOLD_Qty` INT NOT NULL,
+          PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    "daily_PLAN": """
+        CREATE TABLE IF NOT EXISTS `daily_PLAN` (
+          `id` BIGINT AUTO_INCREMENT,
+          `PLAN_date` DATE NOT NULL,
+          `factory_code` VARCHAR(32) NOT NULL,
+          `product_ID` VARCHAR(64) NOT NULL,
+          `target_qty` INT NOT NULL,
+          PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    "monthly_plan_approved": """
+        CREATE TABLE IF NOT EXISTS `monthly_plan_approved` (
+          `id` BIGINT AUTO_INCREMENT,
+          `plan_month` VARCHAR(7) NOT NULL,
+          `PLAN_date` DATE NOT NULL,
+          `factory_code` VARCHAR(32) NOT NULL,
+          `product_ID` VARCHAR(64) NOT NULL,
+          `target_IN_glass_qty` INT NOT NULL,
+          `target_in_panel_qty` INT NOT NULL,
+          `target_Out_glass_qty` INT NOT NULL,
+          `target_Out_panel_qty` INT NOT NULL,
+          PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    "oms_inventory": """
+        CREATE TABLE IF NOT EXISTS `oms_inventory` (
+          `id` BIGINT AUTO_INCREMENT,
+          `report_month` VARCHAR(7) NOT NULL,
+          `product_ID` VARCHAR(64) NOT NULL,
+          `SBU_DESC` VARCHAR(64) NOT NULL,
+          `BU_DESC` VARCHAR(64) NOT NULL,
+          `CUSTOMER` VARCHAR(64) NOT NULL,
+          `ERP_FACTORY` VARCHAR(32) NOT NULL,
+          `ERP_LOCATION` VARCHAR(32) NOT NULL,
+          `LGORT_DL` VARCHAR(32) NOT NULL,
+          `LGORT_LX` VARCHAR(32) NOT NULL,
+          `GRADE_FL` VARCHAR(32) NOT NULL,
+          `GRADE` VARCHAR(8) NOT NULL,
+          `glass_qty` INT NOT NULL,
+          `panel_qty` INT NOT NULL,
+          `ONE_AGE_panel_qty` INT NOT NULL,
+          `TWO_AGE_panel_qty` INT NOT NULL,
+          `THREE_AGE_panel_qty` INT NOT NULL,
+          `FOUR_AGE_panel_qty` INT NOT NULL,
+          `FIVE_AGE_panel_qty` INT NOT NULL,
+          `SIX_AGE_panel_qty` INT NOT NULL,
+          `SEVEN_AGE_panel_qty` INT NOT NULL,
+          `EUGHT_AGE_panel_qty` INT NOT NULL,
+          PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    "product_attributes": """
+        CREATE TABLE IF NOT EXISTS `product_attributes` (
+          `id` BIGINT AUTO_INCREMENT,
+          `product_ID` VARCHAR(64) NOT NULL,
+          `application` VARCHAR(32) NOT NULL,
+          `CUT_NUM` INT NOT NULL,
+          `common_categories` VARCHAR(64) NOT NULL,
+          `IS_OXIDE` TINYINT(1) NOT NULL,
+          `IS_XPS` TINYINT(1) NOT NULL,
+          `IS_sloc` TINYINT(1) NOT NULL,
+          `IS_cOATER` TINYINT(1) NOT NULL,
+          `IS_OA` TINYINT(1) NOT NULL,
+          `IS_Notch` TINYINT(1) NOT NULL,
+          PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    "product_mapping": """
+        CREATE TABLE IF NOT EXISTS `product_mapping` (
+          `id` BIGINT AUTO_INCREMENT,
+          `FGCODE` VARCHAR(64) NOT NULL,
+          `Cell No` VARCHAR(64) NOT NULL,
+          `Array No` VARCHAR(64) NOT NULL,
+          `CF No` VARCHAR(64) NOT NULL,
+          PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    "production_actuals": """
+        CREATE TABLE IF NOT EXISTS `production_actuals` (
+          `id` BIGINT AUTO_INCREMENT,
+          `work_date` DATE NOT NULL,
+          `FACTORY` VARCHAR(32) NOT NULL,
+          `product_ID` VARCHAR(64) NOT NULL,
+          `act_type` VARCHAR(16) NOT NULL,
+          `GLS_qty` INT NOT NULL,
+          `Panel_qty` INT NOT NULL,
+          `defect_qty` INT NOT NULL,
+          PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    "sales_financial_perf": """
+        CREATE TABLE IF NOT EXISTS `sales_financial_perf` (
+          `id` BIGINT AUTO_INCREMENT,
+          `report_month` VARCHAR(7) NOT NULL,
+          `SBU_DESC` VARCHAR(64) NOT NULL,
+          `BU_DESC` VARCHAR(64) NOT NULL,
+          `CUSTOMER` VARCHAR(64) NOT NULL,
+          `FGCODE` VARCHAR(64) NOT NULL,
+          `sales_qty` INT NOT NULL,
+          `FINANCIAL_qty` INT NOT NULL,
+          PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    "weekly_rolling_plan": """
+        CREATE TABLE IF NOT EXISTS `weekly_rolling_plan` (
+          `id` BIGINT AUTO_INCREMENT,
+          `PM_VERSION` VARCHAR(20) NOT NULL,
+          `plan_date` DATE NOT NULL,
+          `factory` VARCHAR(32) NOT NULL,
+          `product_ID` VARCHAR(64) NOT NULL,
+          `plan_qty` INT NOT NULL,
+          PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+}
+
+
+DROP_ORDER = [
+    "sales_financial_perf",
+    "production_actuals",
+    "product_mapping",
+    "product_attributes",
+    "oms_inventory",
+    "monthly_plan_approved",
+    "daily_PLAN",
+    "daily_inventory",
+    "weekly_rolling_plan",
+    "p_demand",
+    "v_demand",
+]
+
+
+def insert_product_attributes(cursor, catalog: list[dict]) -> None:
+    data = [
+        (
+            item["product_ID"],
+            item["application"],
+            item["cut_num"],
+            item["common_categories"],
+            item["is_oxide"],
+            item["is_xps"],
+            item["is_sloc"],
+            item["is_coater"],
+            item["is_oa"],
+            item["is_notch"],
+        )
+        for item in catalog
+    ]
+    cursor.executemany(
+        """
+        INSERT INTO `product_attributes`
+        (`product_ID`, `application`, `CUT_NUM`, `common_categories`, `IS_OXIDE`, `IS_XPS`, `IS_sloc`, `IS_cOATER`, `IS_OA`, `IS_Notch`)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        data,
+    )
+
+
+def insert_product_mapping(cursor, catalog: list[dict]) -> None:
+    data = [(item["FGCODE"], item["cell_no"], item["array_no"], item["cf_no"]) for item in catalog]
+    cursor.executemany(
+        """
+        INSERT INTO `product_mapping` (`FGCODE`, `Cell No`, `Array No`, `CF No`)
+        VALUES (%s, %s, %s, %s)
+        """,
+        data,
+    )
+
+
+def insert_v_demand(cursor, catalog: list[dict], start_dt: datetime, end_dt: datetime, rows: int = 600) -> None:
+    data = []
+    for _ in range(rows):
+        dt = random_day(start_dt, end_dt)
+        base_qty = random.randint(1000, 50000)
+        product = random.choice(catalog)
+        data.append(
+            (
+                random.choice(VERSION_POOL),
+                product["FGCODE"],
+                random.choice(SBU_LIST),
+                random.choice(CUSTOMERS),
+                month_str(dt, 0),
+                base_qty,
+                int(base_qty * random.uniform(0.8, 1.2)),
+                int(base_qty * random.uniform(0.8, 1.2)),
+                int(base_qty * random.uniform(0.8, 1.2)),
+                int(base_qty * random.uniform(0.8, 1.2)),
+                int(base_qty * random.uniform(0.8, 1.2)),
+                int(base_qty * random.uniform(0.8, 1.2)),
+            )
+        )
+    cursor.executemany(
+        """
+        INSERT INTO `v_demand`
+        (`PM_VERSION`, `FGCODE`, `SBU_DESC`, `CUSTOMER`, `MONTH`, `REQUIREMENT_QTY`, `NEXT_REQUIREMENT`, `LAST_REQUIREMENT`, `MONTH4`, `MONTH5`, `MONTH6`, `MONTH7`)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        data,
+    )
+
+
+def insert_p_demand(cursor, catalog: list[dict], start_dt: datetime, end_dt: datetime, rows: int = 600) -> None:
+    data = []
+    for _ in range(rows):
+        dt = random_day(start_dt, end_dt)
+        base_qty = random.randint(1000, 50000)
+        product = random.choice(catalog)
+        data.append(
+            (
+                random.choice(VERSION_POOL),
+                product["FGCODE"],
+                random.choice(SBU_LIST),
+                random.choice(BU_LIST),
+                random.choice(CUSTOMERS),
+                month_str(dt, 0),
+                int(base_qty * random.uniform(0.8, 1.0)),
+                int(base_qty * random.uniform(0.8, 1.0)),
+                int(base_qty * random.uniform(0.8, 1.0)),
+                int(base_qty * random.uniform(0.8, 1.0)),
+                int(base_qty * random.uniform(0.8, 1.0)),
+                int(base_qty * random.uniform(0.8, 1.0)),
+                int(base_qty * random.uniform(0.8, 1.0)),
+            )
+        )
+    cursor.executemany(
+        """
+        INSERT INTO `p_demand`
+        (`PM_VERSION`, `FGCODE`, `SBU_DESC`, `BU_DESC`, `CUSTOMER`, `MONTH`, `REQUIREMENT_QTY`, `NEXT_REQUIREMENT`, `LAST_REQUIREMENT`, `MONTH4`, `MONTH5`, `MONTH6`, `MONTH7`)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        data,
+    )
+
+
+def insert_daily_inventory(cursor, catalog: list[dict], start_dt: datetime, end_dt: datetime, rows: int = 700) -> None:
+    data = []
+    for _ in range(rows):
+        dt = random_day(start_dt, end_dt)
+        product = random.choice(catalog)
+        ttl_qty = random.randint(500, 30000)
+        hold_qty = random.randint(0, int(ttl_qty * 0.2))
+        data.append(
+            (
+                dt.strftime("%Y-%m-%d"),
+                random.choice(FACTORIES),
+                random.choice(ERP_FACTORIES),
+                random.choice(ERP_LOCATIONS),
+                product["product_ID"],
+                random.choice(PRODUCTION_TYPES),
+                random.choice(GRADES),
+                f"CI{random.randint(1000, 9999)}",
+                ttl_qty,
+                hold_qty,
+            )
+        )
+    cursor.executemany(
+        """
+        INSERT INTO `daily_inventory`
+        (`report_date`, `factory_code`, `ERP_FACTORY`, `ERP_LOCATION`, `product_ID`, `PRODUCTION_TYPE`, `GRADE`, `CHECKINCODE`, `TTL_Qty`, `HOLD_Qty`)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        data,
+    )
+
+
+def insert_daily_plan(cursor, catalog: list[dict], start_dt: datetime, end_dt: datetime, rows: int = 700) -> None:
+    data = []
+    for _ in range(rows):
+        dt = random_day(start_dt, end_dt)
+        product = random.choice(catalog)
+        data.append((dt.strftime("%Y-%m-%d"), random.choice(FACTORIES), product["product_ID"], random.randint(1000, 25000)))
+    cursor.executemany(
+        """
+        INSERT INTO `daily_PLAN` (`PLAN_date`, `factory_code`, `product_ID`, `target_qty`)
+        VALUES (%s, %s, %s, %s)
+        """,
+        data,
+    )
+
+
+def insert_monthly_plan_approved(cursor, catalog: list[dict], start_dt: datetime, end_dt: datetime, rows: int = 500) -> None:
+    data = []
+    for _ in range(rows):
+        dt = random_day(start_dt, end_dt)
+        product = random.choice(catalog)
+        in_glass = random.randint(1000, 10000)
+        in_panel = in_glass * product["cut_num"]
+        out_glass = int(in_glass * random.uniform(0.85, 0.98))
+        out_panel = out_glass * product["cut_num"]
+        data.append(
+            (
+                dt.strftime("%Y-%m"),
+                dt.strftime("%Y-%m-%d"),
+                random.choice(FACTORIES),
+                product["product_ID"],
+                in_glass,
+                in_panel,
+                out_glass,
+                out_panel,
+            )
+        )
+    cursor.executemany(
+        """
+        INSERT INTO `monthly_plan_approved`
+        (`plan_month`, `PLAN_date`, `factory_code`, `product_ID`, `target_IN_glass_qty`, `target_in_panel_qty`, `target_Out_glass_qty`, `target_Out_panel_qty`)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        data,
+    )
+
+
+def insert_oms_inventory(cursor, catalog: list[dict], start_dt: datetime, end_dt: datetime, rows: int = 500) -> None:
+    data = []
+    for _ in range(rows):
+        dt = random_day(start_dt, end_dt)
+        product = random.choice(catalog)
+        panel_qty = random.randint(1000, 40000)
+        age_buckets = [random.randint(0, max(panel_qty // 4, 1)) for _ in range(8)]
+        data.append(
+            (
+                dt.strftime("%Y-%m"),
+                product["product_ID"],
+                random.choice(SBU_LIST),
+                random.choice(BU_LIST),
+                random.choice(CUSTOMERS),
+                random.choice(ERP_FACTORIES),
+                random.choice(ERP_LOCATIONS),
+                random.choice(["FG", "HUB", "TRANSIT"]),
+                random.choice(["GOOD", "HOLD"]),
+                random.choice(["A_CLASS", "B_CLASS"]),
+                random.choice(GRADES),
+                random.randint(100, 8000),
+                panel_qty,
+                *age_buckets,
+            )
+        )
+    cursor.executemany(
+        """
+        INSERT INTO `oms_inventory`
+        (`report_month`, `product_ID`, `SBU_DESC`, `BU_DESC`, `CUSTOMER`, `ERP_FACTORY`, `ERP_LOCATION`, `LGORT_DL`, `LGORT_LX`, `GRADE_FL`, `GRADE`, `glass_qty`, `panel_qty`, `ONE_AGE_panel_qty`, `TWO_AGE_panel_qty`, `THREE_AGE_panel_qty`, `FOUR_AGE_panel_qty`, `FIVE_AGE_panel_qty`, `SIX_AGE_panel_qty`, `SEVEN_AGE_panel_qty`, `EUGHT_AGE_panel_qty`)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        data,
+    )
+
+
+def insert_production_actuals(cursor, catalog: list[dict], start_dt: datetime, end_dt: datetime, rows: int = 800) -> None:
+    data = []
+    for _ in range(rows):
+        dt = random_day(start_dt, end_dt)
+        product = random.choice(catalog)
+        act_type = random.choice(["IN", "OUT", "SCRAP"])
+        gls_qty = random.randint(100, 2000)
+        panel_qty = gls_qty * product["cut_num"]
+        defect_qty = 0 if act_type != "SCRAP" else random.randint(1, max(gls_qty // 10, 1))
+        data.append((dt.strftime("%Y-%m-%d"), random.choice(FACTORIES), product["product_ID"], act_type, gls_qty, panel_qty, defect_qty))
+    cursor.executemany(
+        """
+        INSERT INTO `production_actuals`
+        (`work_date`, `FACTORY`, `product_ID`, `act_type`, `GLS_qty`, `Panel_qty`, `defect_qty`)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        data,
+    )
+
+
+def insert_sales_financial_perf(cursor, catalog: list[dict], start_dt: datetime, end_dt: datetime, rows: int = 500) -> None:
+    data = []
+    for _ in range(rows):
+        dt = random_day(start_dt, end_dt)
+        product = random.choice(catalog)
+        data.append(
+            (
+                dt.strftime("%Y-%m"),
+                random.choice(SBU_LIST),
+                random.choice(BU_LIST),
+                random.choice(CUSTOMERS),
+                product["FGCODE"],
+                random.randint(500, 50000),
+                random.randint(500, 50000),
+            )
+        )
+    cursor.executemany(
+        """
+        INSERT INTO `sales_financial_perf`
+        (`report_month`, `SBU_DESC`, `BU_DESC`, `CUSTOMER`, `FGCODE`, `sales_qty`, `FINANCIAL_qty`)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        data,
+    )
+
+
+def insert_weekly_rolling_plan(cursor, catalog: list[dict], start_dt: datetime, end_dt: datetime, rows: int = 500) -> None:
+    data = []
+    for _ in range(rows):
+        dt = random_day(start_dt, end_dt)
+        product = random.choice(catalog)
+        data.append((random.choice(VERSION_POOL), dt.strftime("%Y-%m-%d"), random.choice(FACTORIES), product["product_ID"], random.randint(1000, 20000)))
+    cursor.executemany(
+        """
+        INSERT INTO `weekly_rolling_plan`
+        (`PM_VERSION`, `plan_date`, `factory`, `product_ID`, `plan_qty`)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        data,
+    )
+
+
+def run_db_insertion() -> None:
+    print(f"[*] 正在连接 MySQL: {DB_CONFIG['host']}:{DB_CONFIG['port']} ...")
+    conn = None
+    cursor = None
     try:
-        # 连接数据库服务
         conn = pymysql.connect(**DB_CONFIG)
         cursor = conn.cursor()
+        cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{DB_NAME}` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci")
+        cursor.execute(f"USE `{DB_NAME}`")
+        print(f"[*] 成功进入数据库: {DB_NAME}")
 
-        # 确保数据库存在 (MySQL 8.0 规范字符集)
-        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {DB_NAME} DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci")
-        cursor.execute(f"USE {DB_NAME}")
-        print(f"[*] 成功连接并进入数据库: {DB_NAME}")
+        for table_name in DROP_ORDER:
+            cursor.execute(f"DROP TABLE IF EXISTS `{table_name}`")
 
-        # ==========================================
-        # 0. 清空旧数据（确保重跑后为最新数据）
-        # ==========================================
-        table_order = [
-            "v_demand",
-            "p_demand",
-            "monthly_plan_approved",
-            "weekly_rolling_plan",
-            "daily_schedule",
-            "work_in_progress",
-            "daily_inventory",
-            "oms_inventory",
-            "production_actuals",
-            "product_mapping",
-            "product_attributes",
-            "sales_financial_perf",
-        ]
-        for t in table_order:
-            try:
-                cursor.execute(f"DROP TABLE IF EXISTS `{t}`")
-            except Exception:
-                pass
+        for table_name in DROP_ORDER[::-1]:
+            print(f"[*] 创建表: {table_name}")
+            cursor.execute(CREATE_SQL[table_name])
 
-        # ==========================================
-        # 1. v_demand (V版需求)
-        # ==========================================
-        print("[*] 正在创建并写入数据: v_demand ...", end="")
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS `v_demand` (
-          `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',
-          `demand_no` VARCHAR(50) NOT NULL COMMENT 'V版需求编号',
-          `customer_name` VARCHAR(50) COMMENT '客户名称',
-          `product_code` VARCHAR(50) NOT NULL COMMENT '面板料号',
-          `forecast_month` VARCHAR(10) NOT NULL COMMENT '预测需求月份(YYYY-MM)',
-          `forecast_qty` INT NOT NULL COMMENT '客户预测数量(PCS)',
-          `create_time` DATETIME COMMENT '录入时间',
-          PRIMARY KEY (`id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='V版需求表';
-        """)
-        data = []
-        for i in range(1200):
-            dt = random_date(start_dt, end_dt)
-            data.append((f"VD_{dt.strftime('%Y%m')}_{i:04d}", random.choice(CUSTOMERS), random.choice(PRODUCT_CODES), dt.strftime('%Y-%m'), random.randint(1000, 500000), dt.strftime('%Y-%m-%d %H:%M:%S')))
-        cursor.executemany("INSERT INTO `v_demand` (`demand_no`, `customer_name`, `product_code`, `forecast_month`, `forecast_qty`, `create_time`) VALUES (%s, %s, %s, %s, %s, %s)", data)
-        print(" OK (1200 rows)")
+        end_dt = datetime.now()
+        start_dt = end_dt - timedelta(days=180)
+        catalog = build_product_catalog()
 
-        # ==========================================
-        # 2. p_demand (P版需求)
-        # ==========================================
-        print("[*] 正在创建并写入数据: p_demand ...", end="")
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS `p_demand` (
-          `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',
-          `p_demand_no` VARCHAR(50) NOT NULL COMMENT 'P版需求单号',
-          `v_demand_no` VARCHAR(50) COMMENT '关联的V版需求单号',
-          `product_code` VARCHAR(50) NOT NULL COMMENT '面板料号',
-          `commit_month` VARCHAR(10) NOT NULL COMMENT '承诺交货月份',
-          `commit_qty` INT NOT NULL COMMENT '承诺产能(PCS)',
-          `status` VARCHAR(20) COMMENT '状态(Accepted/Partial/Cancelled)',
-          PRIMARY KEY (`id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='P版需求表';
-        """)
-        data = []
-        for i in range(1200):
-            dt = random_date(start_dt, end_dt)
-            data.append((f"PD_{dt.strftime('%Y%m')}_{i:04d}", f"VD_{dt.strftime('%Y%m')}_{i:04d}", random.choice(PRODUCT_CODES), dt.strftime('%Y-%m'), random.randint(800, 480000), random.choice(PD_STATUSES)))
-        cursor.executemany("INSERT INTO `p_demand` (`p_demand_no`, `v_demand_no`, `product_code`, `commit_month`, `commit_qty`, `status`) VALUES (%s, %s, %s, %s, %s, %s)", data)
-        print(" OK (1200 rows)")
+        print("[*] 写入 product_attributes ...")
+        insert_product_attributes(cursor, catalog)
+        print("[*] 写入 product_mapping ...")
+        insert_product_mapping(cursor, catalog)
+        print("[*] 写入 v_demand ...")
+        insert_v_demand(cursor, catalog, start_dt, end_dt)
+        print("[*] 写入 p_demand ...")
+        insert_p_demand(cursor, catalog, start_dt, end_dt)
+        print("[*] 写入 daily_inventory ...")
+        insert_daily_inventory(cursor, catalog, start_dt, end_dt)
+        print("[*] 写入 daily_PLAN ...")
+        insert_daily_plan(cursor, catalog, start_dt, end_dt)
+        print("[*] 写入 monthly_plan_approved ...")
+        insert_monthly_plan_approved(cursor, catalog, start_dt, end_dt)
+        print("[*] 写入 oms_inventory ...")
+        insert_oms_inventory(cursor, catalog, start_dt, end_dt)
+        print("[*] 写入 production_actuals ...")
+        insert_production_actuals(cursor, catalog, start_dt, end_dt)
+        print("[*] 写入 sales_financial_perf ...")
+        insert_sales_financial_perf(cursor, catalog, start_dt, end_dt)
+        print("[*] 写入 weekly_rolling_plan ...")
+        insert_weekly_rolling_plan(cursor, catalog, start_dt, end_dt)
 
-        # ==========================================
-        # 3. monthly_plan_approved (审批版月计划)
-        # ==========================================
-        print("[*] 正在创建并写入数据: monthly_plan_approved ...", end="")
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS `monthly_plan_approved` (
-          `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',
-          `plan_month` VARCHAR(10) NOT NULL COMMENT '计划月份',
-          `factory_code` VARCHAR(50) COMMENT '生产厂区',
-          `product_code` VARCHAR(50) NOT NULL COMMENT '面板料号',
-          `target_glass_qty` INT COMMENT '目标投片量',
-          `target_panel_qty` INT NOT NULL COMMENT '目标产出量',
-          `version` VARCHAR(10) COMMENT '版本号',
-          PRIMARY KEY (`id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='审批版月计划';
-        """)
-        data = []
-        for i in range(1050):
-            dt = random_date(start_dt, end_dt)
-            glass = random.randint(1000, 50000)
-            panel = glass * random.choice([2, 6, 18, 60, 200])
-            data.append((dt.strftime('%Y-%m'), random.choice(FACTORIES), random.choice(PRODUCT_CODES), glass, panel, 'V1.0'))
-        cursor.executemany("INSERT INTO `monthly_plan_approved` (`plan_month`, `factory_code`, `product_code`, `target_glass_qty`, `target_panel_qty`, `version`) VALUES (%s, %s, %s, %s, %s, %s)", data)
-        print(" OK (1050 rows)")
-
-        # ==========================================
-        # 4. weekly_rolling_plan (周别月计划)
-        # ==========================================
-        print("[*] 正在创建并写入数据: weekly_rolling_plan ...", end="")
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS `weekly_rolling_plan` (
-          `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',
-          `plan_month` VARCHAR(10) NOT NULL COMMENT '所属月份',
-          `week_no` INT NOT NULL COMMENT '周别(1-52)',
-          `factory_code` VARCHAR(50) COMMENT '厂区',
-          `product_code` VARCHAR(50) NOT NULL COMMENT '料号',
-          `planned_qty` INT NOT NULL COMMENT '本周计划产出(PCS)',
-          `adjust_reason` VARCHAR(50) COMMENT '调整原因',
-          PRIMARY KEY (`id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='周别月计划';
-        """)
-        data = []
-        for i in range(1200):
-            dt = random_date(start_dt, end_dt)
-            week = dt.isocalendar()[1]
-            data.append((dt.strftime('%Y-%m'), week, random.choice(FACTORIES), random.choice(PRODUCT_CODES), random.randint(10000, 100000), random.choice(ADJUST_REASONS)))
-        cursor.executemany("INSERT INTO `weekly_rolling_plan` (`plan_month`, `week_no`, `factory_code`, `product_code`, `planned_qty`, `adjust_reason`) VALUES (%s, %s, %s, %s, %s, %s)", data)
-        print(" OK (1200 rows)")
-
-        # ==========================================
-        # 5. daily_schedule (Daily计划)
-        # ==========================================
-        print("[*] 正在创建并写入数据: daily_schedule ...", end="")
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS `daily_schedule` (
-          `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',
-          `work_date` DATE NOT NULL COMMENT '生产日期',
-          `factory_code` VARCHAR(50) COMMENT '厂区',
-          `line_code` VARCHAR(50) COMMENT '产线/机台',
-          `product_code` VARCHAR(50) NOT NULL COMMENT '料号',
-          `shift` VARCHAR(10) COMMENT '班次(Day/Night)',
-          `target_qty` INT NOT NULL COMMENT '当日排产数量',
-          PRIMARY KEY (`id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Daily计划';
-        """)
-        data = []
-        for i in range(1500):
-            dt = random_date(start_dt, end_dt).strftime('%Y-%m-%d')
-            line = f"{random.choice(PROCESSES)}_L{random.randint(1,5)}"
-            data.append((dt, random.choice(FACTORIES), line, random.choice(PRODUCT_CODES), random.choice(['Day', 'Night']), random.randint(1000, 20000)))
-        cursor.executemany("INSERT INTO `daily_schedule` (`work_date`, `factory_code`, `line_code`, `product_code`, `shift`, `target_qty`) VALUES (%s, %s, %s, %s, %s, %s)", data)
-        print(" OK (1500 rows)")
-
-        # ==========================================
-        # 6. work_in_progress (WIP表)
-        # ==========================================
-        print("[*] 正在创建并写入数据: work_in_progress ...", end="")
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS `work_in_progress` (
-          `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',
-          `lot_id` VARCHAR(50) NOT NULL COMMENT '批次号',
-          `factory_code` VARCHAR(50) COMMENT '厂区',
-          `product_code` VARCHAR(50) NOT NULL COMMENT '料号',
-          `current_process` VARCHAR(50) COMMENT '当前所在工序',
-          `process_entry_time` DATETIME COMMENT '入站时间',
-          `wip_qty` INT NOT NULL COMMENT '滞留数量',
-          `priority` INT COMMENT '优先级(1-5)',
-          `hold_flag` TINYINT(1) COMMENT '是否冻结(0/1)',
-          `update_time` DATETIME COMMENT '更新时间',
-          PRIMARY KEY (`id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='WIP表';
-        """)
-        data = []
-        for i in range(1200):
-            dt = random_date(start_dt, end_dt).strftime('%Y-%m-%d %H:%M:%S')
-            data.append((f"LOT_{random.randint(100000,999999)}", random.choice(FACTORIES), random.choice(PRODUCT_CODES), random.choice(PROCESSES), dt, random.randint(100, 5000), random.randint(1,5), random.choice([0,0,0,1]), dt))
-        cursor.executemany("INSERT INTO `work_in_progress` (`lot_id`, `factory_code`, `product_code`, `current_process`, `process_entry_time`, `wip_qty`, `priority`, `hold_flag`, `update_time`) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)", data)
-        print(" OK (1200 rows)")
-
-        # ==========================================
-        # 7. daily_inventory (Daily库存)
-        # ==========================================
-        print("[*] 正在创建并写入数据: daily_inventory ...", end="")
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS `daily_inventory` (
-          `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',
-          `report_date` DATE NOT NULL COMMENT '库存快照日期',
-          `factory_code` VARCHAR(50) COMMENT '厂区',
-          `warehouse_code` VARCHAR(50) COMMENT '仓库类型',
-          `product_code` VARCHAR(50) NOT NULL COMMENT '物料号',
-          `available_qty` INT NOT NULL COMMENT '可用库存量',
-          `safety_stock` INT COMMENT '安全库存水位',
-          PRIMARY KEY (`id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Daily库存表';
-        """)
-        data = []
-        for i in range(1200):
-            dt = random_date(start_dt, end_dt).strftime('%Y-%m-%d')
-            data.append((dt, random.choice(FACTORIES), random.choice(WAREHOUSES), random.choice(PRODUCT_CODES), random.randint(0, 100000), random.randint(5000, 20000)))
-        cursor.executemany("INSERT INTO `daily_inventory` (`report_date`, `factory_code`, `warehouse_code`, `product_code`, `available_qty`, `safety_stock`) VALUES (%s, %s, %s, %s, %s, %s)", data)
-        print(" OK (1200 rows)")
-
-        # ==========================================
-        # 8. oms_inventory (OMS全渠道库存表)
-        # ==========================================
-        print("[*] 正在创建并写入数据: oms_inventory ...", end="")
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS `oms_inventory` (
-          `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',
-          `report_date` DATE NOT NULL COMMENT '统计日期',
-          `product_code` VARCHAR(50) NOT NULL COMMENT '面板料号',
-          `customer_name` VARCHAR(50) COMMENT '对应客户',
-          `in_transit_qty` INT COMMENT '在途库存',
-          `hub_qty` INT COMMENT '海外HUB仓库存',
-          `customer_hub_qty` INT COMMENT '客户自身库存',
-          PRIMARY KEY (`id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='OMS全渠道库存';
-        """)
-        data = []
-        for i in range(1100):
-            dt = random_date(start_dt, end_dt).strftime('%Y-%m-%d')
-            data.append((dt, random.choice(PRODUCT_CODES), random.choice(CUSTOMERS), random.randint(10000, 50000), random.randint(50000, 200000), random.randint(0, 100000)))
-        cursor.executemany("INSERT INTO `oms_inventory` (`report_date`, `product_code`, `customer_name`, `in_transit_qty`, `hub_qty`, `customer_hub_qty`) VALUES (%s, %s, %s, %s, %s, %s)", data)
-        print(" OK (1100 rows)")
-
-        # ==========================================
-        # 9. production_actuals (生产实绩表)
-        # ==========================================
-        print("[*] 正在创建并写入数据: production_actuals ...", end="")
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS `production_actuals` (
-          `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',
-          `work_date` DATE NOT NULL COMMENT '生产日期',
-          `line_code` VARCHAR(50) COMMENT '产线编号',
-          `product_code` VARCHAR(50) NOT NULL COMMENT '料号',
-          `input_qty` INT NOT NULL COMMENT '投料数',
-          `output_qty` INT NOT NULL COMMENT '良品产出数',
-          `defect_qty` INT NOT NULL COMMENT '不良品数',
-          `defect_type_code` VARCHAR(20) COMMENT '不良类型',
-          `downtime_hours` DECIMAL(5,2) COMMENT '停机时长(H)',
-          `yield_rate` DECIMAL(5,2) NOT NULL COMMENT '良率(%)',
-          PRIMARY KEY (`id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='生产实绩表';
-        """)
-        data = []
-        for i in range(1500):
-            dt = random_date(start_dt, end_dt).strftime('%Y-%m-%d')
-            input_q = random.randint(5000, 20000)
-            yield_r = random.uniform(85.0, 99.8)
-            output_q = int(input_q * (yield_r / 100))
-            defect_q = input_q - output_q
-            line = f"{random.choice(PROCESSES)}_L{random.randint(1,5)}"
-            data.append((dt, line, random.choice(PRODUCT_CODES), input_q, output_q, defect_q, random.choice(['Mura', 'Particle', 'Scratch', 'None']), round(random.uniform(0, 4), 2), round(yield_r, 2)))
-        cursor.executemany("INSERT INTO `production_actuals` (`work_date`, `line_code`, `product_code`, `input_qty`, `output_qty`, `defect_qty`, `defect_type_code`, `downtime_hours`, `yield_rate`) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)", data)
-        print(" OK (1500 rows)")
-
-        # ==========================================
-        # 10. product_mapping (产品匹配表)
-        # ==========================================
-        print("[*] 正在创建并写入数据: product_mapping ...", end="")
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS `product_mapping` (
-          `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',
-          `product_code` VARCHAR(50) NOT NULL COMMENT '成品料号',
-          `glass_substrate_size` VARCHAR(50) COMMENT '基板世代',
-          `cut_efficiency` INT NOT NULL COMMENT '切片数',
-          `preferred_factory` VARCHAR(50) COMMENT '主选厂区',
-          `alternative_factory` VARCHAR(50) COMMENT '备选代工厂区',
-          PRIMARY KEY (`id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='产品匹配表';
-        """)
-        data = []
-        for code in PRODUCT_CODES:
-            data.append((code, random.choice(GLASS_SIZES), random.choice([2, 6, 18, 32, 65, 200]), random.choice(FACTORIES), random.choice(FACTORIES)))
-        cursor.executemany("INSERT INTO `product_mapping` (`product_code`, `glass_substrate_size`, `cut_efficiency`, `preferred_factory`, `alternative_factory`) VALUES (%s, %s, %s, %s, %s)", data)
-        print(f" OK ({len(PRODUCT_CODES)} rows)")
-
-        # ==========================================
-        # 11. product_attributes (产品特性表)
-        # ==========================================
-        print("[*] 正在创建并写入数据: product_attributes ...", end="")
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS `product_attributes` (
-          `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',
-          `product_code` VARCHAR(50) NOT NULL COMMENT '产品料号',
-          `tech_family` VARCHAR(50) COMMENT '技术平台',
-          `application` VARCHAR(50) COMMENT '应用领域',
-          `std_lead_time_days` INT COMMENT '标准生产周期',
-          `moq` INT COMMENT '最小起投量',
-          `life_cycle` VARCHAR(20) COMMENT '生命周期(NPI/MP/EOL)',
-          PRIMARY KEY (`id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='产品特性表';
-        """)
-        data = []
-        for code in PRODUCT_CODES:
-            data.append((code, random.choice(TECH_TYPES), random.choice(APPS), random.randint(15, 45), random.choice([1000, 5000, 10000]), random.choice(LIFECYCLES)))
-        cursor.executemany("INSERT INTO `product_attributes` (`product_code`, `tech_family`, `application`, `std_lead_time_days`, `moq`, `life_cycle`) VALUES (%s, %s, %s, %s, %s, %s)", data)
-        print(f" OK ({len(PRODUCT_CODES)} rows)")
-
-        # ==========================================
-        # 12. sales_financial_perf (销售&财务业绩)
-        # ==========================================
-        print("[*] 正在创建并写入数据: sales_financial_perf ...", end="")
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS `sales_financial_perf` (
-          `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',
-          `report_month` VARCHAR(10) NOT NULL COMMENT '结算月份(YYYY-MM)',
-          `product_code` VARCHAR(50) NOT NULL COMMENT '产品料号',
-          `sales_qty` INT NOT NULL COMMENT '当月实际销量',
-          `unit_price_usd` DECIMAL(10,2) COMMENT '平均美金单价(ASP)',
-          `revenue_usd` DECIMAL(15,2) COMMENT '总营收(USD)',
-          `gross_margin_pct` DECIMAL(5,2) COMMENT '毛利率(%)',
-          PRIMARY KEY (`id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='销售与财务业绩表';
-        """)
-        data = []
-        for i in range(1200):
-            dt = random_date(start_dt, end_dt)
-            qty = random.randint(5000, 200000)
-            price = round(random.uniform(15.0, 350.0), 2)
-            data.append((dt.strftime('%Y-%m'), random.choice(PRODUCT_CODES), qty, price, round(qty * price, 2), round(random.uniform(-5.0, 35.0), 2)))
-        cursor.executemany("INSERT INTO `sales_financial_perf` (`report_month`, `product_code`, `sales_qty`, `unit_price_usd`, `revenue_usd`, `gross_margin_pct`) VALUES (%s, %s, %s, %s, %s, %s)", data)
-        print(" OK (1200 rows)")
-
-        # 提交事务
         conn.commit()
-        print("\n[✔] 完美！12张表全部创建完毕并成功写入数据。")
-
-    except Exception as e:
-        if 'conn' in locals() and conn.open:
+        print("[✔] 已同步创建并写入 11 张当前版本业务表。")
+    except Exception as exc:
+        if conn is not None and conn.open:
             conn.rollback()
-        print(f"\n[X] 执行出现错误: {e}")
+        print(f"[X] 执行出现错误: {exc}")
+        raise
     finally:
-        if 'cursor' in locals():
+        if cursor is not None:
             cursor.close()
-        if 'conn' in locals() and conn.open:
+        if conn is not None and conn.open:
             conn.close()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     run_db_insertion()

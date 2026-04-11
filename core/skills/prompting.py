@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 
 def _format_lines(items: tuple[str, ...]) -> str:
     return "\n".join(f"- {item}" for item in items if item)
@@ -21,21 +23,31 @@ def build_text2sql_prompt(
     *,
     domain_label: str,
     focus_areas: tuple[str, ...],
+    field_conventions: tuple[str, ...],
     sql_rules: tuple[str, ...],
     table_schema: str,
     question: str,
+    structured_filters: dict,
 ) -> str:
     focus_text = _format_lines(focus_areas)
+    convention_text = _format_lines(field_conventions)
     rule_text = _format_lines(sql_rules)
+    filter_text = json.dumps(structured_filters or {}, ensure_ascii=False, indent=2)
     return f"""你是一个资深的制造企业 MySQL 8.0 专家，当前负责 {domain_label} 技能。
 
 当前业务关注点：
 {focus_text}
 
+字段与业务口径：
+{convention_text}
+
 请根据【表结构】和【SQL 规则】将用户问题转换成只读 SQL。
 
 【表结构】
 {table_schema}
+
+【结构化过滤条件】
+{filter_text}
 
 【SQL 规则】
 {rule_text}
@@ -46,6 +58,7 @@ def build_text2sql_prompt(
 3. 不要使用不存在的字段或表。
 4. 如果需要关联，优先遵循 schema 中已有的 relationships。
 5. 除非用户明确要求，不要返回无界全表扫描结果。
+6. 如果【结构化过滤条件】中存在时间、版本、工厂、客户或产品条件，优先在 SQL 中准确体现。
 
 用户问题：
 {question}
@@ -55,13 +68,17 @@ def build_text2sql_prompt(
 def build_reflect_sql_prompt(
     *,
     domain_label: str,
+    field_conventions: tuple[str, ...],
     sql_rules: tuple[str, ...],
     question: str,
     table_schema: str,
     sql_query: str,
     error_message: str,
+    structured_filters: dict,
 ) -> str:
+    convention_text = _format_lines(field_conventions)
     rule_text = _format_lines(sql_rules)
+    filter_text = json.dumps(structured_filters or {}, ensure_ascii=False, indent=2)
     return f"""你是 {domain_label} 技能的 MySQL 修复助手。刚才生成的 SQL 执行失败了。
 
 【问题】
@@ -69,6 +86,12 @@ def build_reflect_sql_prompt(
 
 【表结构】
 {table_schema}
+
+【字段与业务口径】
+{convention_text}
+
+【结构化过滤条件】
+{filter_text}
 
 【SQL 规则】
 {rule_text}

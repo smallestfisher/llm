@@ -6,21 +6,30 @@ from core.config.loader import load_tables
 DOMAIN_TABLES = {
     "production": [
         "production_actuals",
-        "daily_schedule",
+        "product_attributes",
+        "product_mapping",
+    ],
+    "planning": [
+        "daily_PLAN",
         "weekly_rolling_plan",
         "monthly_plan_approved",
-        "p_demand",
-        "v_demand",
-        "sales_financial_perf",
-        "work_in_progress",
         "product_attributes",
         "product_mapping",
     ],
     "inventory": [
         "daily_inventory",
         "oms_inventory",
-        "work_in_progress",
-        "daily_schedule",
+        "product_attributes",
+        "product_mapping",
+    ],
+    "demand": [
+        "v_demand",
+        "p_demand",
+        "product_attributes",
+        "product_mapping",
+    ],
+    "sales": [
+        "sales_financial_perf",
         "product_attributes",
         "product_mapping",
     ],

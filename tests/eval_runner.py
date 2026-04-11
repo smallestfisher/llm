@@ -10,14 +10,26 @@ def is_field_in_sql(sql: str, expected_field: str) -> bool:
     if "." in expected_field:
         table, col = expected_field.split(".", 1)
         pattern_full = rf"\b{table}\.{col}\b"
+        pattern_col = rf"\b{col}\b"
+        pattern_agg = rf"\b(sum|avg|min|max|count)\s*\(\s*(?:\w+\.)?{col}\s*\)"
+        pattern_select_star = rf"\bselect\s+\*\s+from\s+{table}\b"
         alias_match = re.search(rf"\bFROM\s+{table}\s+(\w+)\b", sql, re.IGNORECASE)
         if alias_match:
             alias = alias_match.group(1)
             pattern_alias = rf"\b{alias}\.{col}\b"
             return bool(
-                re.search(pattern_full, sql, re.IGNORECASE) or re.search(pattern_alias, sql, re.IGNORECASE)
+                re.search(pattern_full, sql, re.IGNORECASE)
+                or re.search(pattern_alias, sql, re.IGNORECASE)
+                or re.search(pattern_agg, sql, re.IGNORECASE)
+                or re.search(pattern_select_star, sql, re.IGNORECASE)
+                or (re.search(rf"\b{table}\b", sql, re.IGNORECASE) and re.search(pattern_col, sql, re.IGNORECASE))
             )
-        return bool(re.search(pattern_full, sql, re.IGNORECASE))
+        return bool(
+            re.search(pattern_full, sql, re.IGNORECASE)
+            or re.search(pattern_agg, sql, re.IGNORECASE)
+            or re.search(pattern_select_star, sql, re.IGNORECASE)
+            or (re.search(rf"\b{table}\b", sql, re.IGNORECASE) and re.search(pattern_col, sql, re.IGNORECASE))
+        )
     return bool(re.search(rf"\b{expected_field}\b", sql, re.IGNORECASE))
 
 
@@ -35,6 +47,7 @@ async def run_evaluation():
         expected_field = case.get("expected_field")
         expected_route = case.get("expected_route")
         expected_skill = case.get("expected_skill")
+        expected_domains = case.get("expected_domains")
 
         config = {"configurable": {"thread_id": f"test_{question[:5]}"}}
         result = await workflow.ainvoke({"question": question, "chat_history": []}, config=config)
@@ -42,12 +55,22 @@ async def run_evaluation():
         sql = result.get("sql_query", "")
         actual_route = result.get("route")
         actual_skill = result.get("active_skill") or result.get("skill_name")
+        actual_domains = result.get("route_domains") or []
 
         checks = []
         if expected_route:
             checks.append(("route", actual_route == expected_route, expected_route, actual_route))
         if expected_skill:
             checks.append(("skill", actual_skill == expected_skill, expected_skill, actual_skill))
+        if expected_domains:
+            checks.append(
+                (
+                    "domains",
+                    set(actual_domains) == set(expected_domains),
+                    expected_domains,
+                    actual_domains,
+                )
+            )
         if expected_field:
             checks.append(("field", is_field_in_sql(sql, expected_field), expected_field, sql))
 

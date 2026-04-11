@@ -20,6 +20,21 @@ _MONTH_PATTERN = re.compile(r"\b\d{4}[-/]\d{1,2}\b")
 
 _MULTI_TABLE_KEYWORDS = ["对比", "匹配", "联合", "关联", "结合", "同时", "vs", "VS", "对照", "联表"]
 
+_COLUMN_ALIASES = {
+    "product_code": ["product_ID", "FGCODE"],
+    "product_id": ["product_ID", "FGCODE"],
+    "customer_name": ["CUSTOMER"],
+    "customer": ["CUSTOMER"],
+    "factory_code": ["factory_code", "FACTORY", "factory", "ERP_FACTORY"],
+    "report_date": ["report_date", "work_date", "PLAN_date", "plan_date", "report_month", "MONTH", "plan_month"],
+    "work_date": ["work_date", "PLAN_date", "plan_date"],
+    "month": ["MONTH", "plan_month", "report_month"],
+}
+
+
+def _raw_column_name(column: str) -> str:
+    return column.split(" (", 1)[0].strip()
+
 
 def _find_table(question: str) -> str:
     for t in _TABLE_NAMES:
@@ -52,14 +67,26 @@ def refine_simple_filters(question: str, filters: Dict[str, Any]) -> Dict[str, A
     if not table or table not in tables:
         return out
 
-    columns = set(tables[table]["columns"])
+    columns = {_raw_column_name(col) for col in tables[table]["columns"]}
+
+    def _resolve_column_name(field: str) -> str:
+        if not field:
+            return ""
+        if field in columns:
+            return field
+        for alias in _COLUMN_ALIASES.get(field.lower(), []):
+            if alias in columns:
+                return alias
+        return _fuzzy_match_column(field)
 
     # group_by
     if not out.get("group_by"):
         gb: List[str] = []
         for kw, field in _GROUP_BY_KEYWORDS:
-            if kw in q and field in columns:
-                gb.append(field)
+            if kw in q:
+                matched = _resolve_column_name(field)
+                if matched:
+                    gb.append(matched)
         if gb:
             out["group_by"] = gb
 
@@ -84,14 +111,14 @@ def refine_simple_filters(question: str, filters: Dict[str, Any]) -> Dict[str, A
             if g in columns:
                 repaired.append(g)
             else:
-                m = _fuzzy_match_column(str(g))
+                m = _resolve_column_name(str(g))
                 if m:
                     repaired.append(m)
         out["group_by"] = repaired
 
     # metric: validate and repair invalid field
     if out.get("metric_field") and out.get("metric_field") not in columns:
-        m = _fuzzy_match_column(str(out.get("metric_field")))
+        m = _resolve_column_name(str(out.get("metric_field")))
         if m:
             out["metric_field"] = m
         else:
@@ -100,9 +127,10 @@ def refine_simple_filters(question: str, filters: Dict[str, Any]) -> Dict[str, A
 
     if not out.get("metric") or not out.get("metric_field"):
         for kw, field, metric in _METRIC_KEYWORDS:
-            if kw in q and field in columns:
+            matched = _resolve_column_name(field)
+            if kw in q and matched:
                 out["metric"] = metric
-                out["metric_field"] = field
+                out["metric_field"] = matched
                 break
 
     if not out.get("metric"):

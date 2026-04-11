@@ -1,53 +1,182 @@
 [
-    {
-        "question": "查看现在的良品率",
-        "expected_route": "production",
-        "expected_skill": "production_skill",
-        "expected_field": "production_actuals.yield_rate"
-    },
-    {
-        "question": "A产线的实际产出是多少",
-        "expected_route": "production",
-        "expected_skill": "production_skill",
-        "expected_field": "production_actuals.output_qty"
-    },
-    {
-        "question": "目前在途的库存量",
-        "expected_route": "inventory",
-        "expected_skill": "inventory_skill",
-        "expected_field": "oms_inventory.in_transit_qty"
-    },
-    {
-        "question": "有多少wip在制",
-        "expected_route": "production",
-        "expected_field": "work_in_progress"
-    },
-    {
-        "question": "查看A1产线昨天的平均良率",
-        "expected_route": "production",
-        "expected_skill": "production_skill",
-        "expected_field": "production_actuals.yield_rate"
-    },
-    {
-        "question": "查询Samsung目前的在途库存量",
-        "expected_route": "inventory",
-        "expected_skill": "inventory_skill",
-        "expected_field": "oms_inventory.in_transit_qty"
-    },
-    {
-        "question": "OLED产品过去三个月的产出趋势",
-        "expected_route": "production",
-        "expected_skill": "production_skill",
-        "expected_field": "monthly_plan_approved.target_panel_qty"
-    },
-    {
-        "question": "目前优先级为1的在制数量分布",
-        "expected_route": "production",
-        "expected_field": "work_in_progress.wip_qty"
-    },
-    {
-        "question": "OLED产品中上个月毛利率最低的产品",
-        "expected_route": "production",
-        "expected_field": "sales_financial_perf.gross_margin_pct"
-    }
+  {
+    "question": "看下昨天的报废实绩",
+    "expected_route": "production",
+    "expected_skill": "production_skill",
+    "expected_field": "production_actuals.defect_qty"
+  },
+  {
+    "question": "B4_BJ 昨天实际投入多少 glass",
+    "expected_route": "production",
+    "expected_skill": "production_skill",
+    "expected_field": "production_actuals.GLS_qty"
+  },
+  {
+    "question": "最近7天各工厂 panel 实际产出",
+    "expected_route": "production",
+    "expected_skill": "production_skill",
+    "expected_field": "production_actuals.Panel_qty"
+  },
+  {
+    "question": "最近三天不良最多的是哪个产品",
+    "expected_route": "production",
+    "expected_skill": "production_skill",
+    "expected_field": "production_actuals.defect_qty"
+  },
+  {
+    "question": "今天 B4_BJ 的日排产是多少",
+    "expected_route": "planning",
+    "expected_skill": "planning_skill",
+    "expected_field": "daily_PLAN.target_qty"
+  },
+  {
+    "question": "把 2026W03 版本周滚计划拉一下",
+    "expected_route": "planning",
+    "expected_skill": "planning_skill",
+    "expected_field": "weekly_rolling_plan.plan_qty"
+  },
+  {
+    "question": "本月审批版月计划里的 panel 产出目标",
+    "expected_route": "planning",
+    "expected_skill": "planning_skill",
+    "expected_field": "monthly_plan_approved.target_Out_panel_qty"
+  },
+  {
+    "question": "本月审批版月计划里的 glass 投入目标",
+    "expected_route": "planning",
+    "expected_skill": "planning_skill",
+    "expected_field": "monthly_plan_approved.target_IN_glass_qty"
+  },
+  {
+    "question": "看下这个月各厂日计划排布",
+    "expected_route": "planning",
+    "expected_skill": "planning_skill",
+    "expected_field": "daily_PLAN.target_qty"
+  },
+  {
+    "question": "2026W03 这版 forecast 需求是多少",
+    "expected_route": "demand",
+    "expected_skill": "demand_skill",
+    "expected_field": "v_demand.REQUIREMENT_QTY"
+  },
+  {
+    "question": "2026W03 这版 P版承诺需求",
+    "expected_route": "demand",
+    "expected_skill": "demand_skill",
+    "expected_field": "p_demand.REQUIREMENT_QTY"
+  },
+  {
+    "question": "下个月开始第二个月的客户需求",
+    "expected_route": "demand",
+    "expected_skill": "demand_skill",
+    "expected_field": "v_demand.NEXT_REQUIREMENT"
+  },
+  {
+    "question": "看下 V版 forecast 和 P版承诺差多少",
+    "expected_route": "demand",
+    "expected_skill": "demand_skill",
+    "expected_field": "p_demand.REQUIREMENT_QTY"
+  },
+  {
+    "question": "未来第三个月的 P版承诺",
+    "expected_route": "demand",
+    "expected_skill": "demand_skill",
+    "expected_field": "p_demand.LAST_REQUIREMENT"
+  },
+  {
+    "question": "今天各厂 TTL 库存还有多少",
+    "expected_route": "inventory",
+    "expected_skill": "inventory_skill",
+    "expected_field": "daily_inventory.TTL_Qty"
+  },
+  {
+    "question": "Hold 库存主要压在哪些料号",
+    "expected_route": "inventory",
+    "expected_skill": "inventory_skill",
+    "expected_field": "daily_inventory.HOLD_Qty"
+  },
+  {
+    "question": "OMS 里 0到1个月库龄 panel 量",
+    "expected_route": "inventory",
+    "expected_skill": "inventory_skill",
+    "expected_field": "oms_inventory.ONE_AGE_panel_qty"
+  },
+  {
+    "question": "客户仓和 hub 库存先看一下",
+    "expected_route": "inventory",
+    "expected_skill": "inventory_skill",
+    "expected_field": "oms_inventory.panel_qty"
+  },
+  {
+    "question": "哪个 ERP 库位的 Hold 库存最多",
+    "expected_route": "inventory",
+    "expected_skill": "inventory_skill",
+    "expected_field": "daily_inventory.HOLD_Qty"
+  },
+  {
+    "question": "上个月各客户销量",
+    "expected_route": "sales",
+    "expected_skill": "sales_skill",
+    "expected_field": "sales_financial_perf.sales_qty"
+  },
+  {
+    "question": "看下上月财务业绩前十客户",
+    "expected_route": "sales",
+    "expected_skill": "sales_skill",
+    "expected_field": "sales_financial_perf.FINANCIAL_qty"
+  },
+  {
+    "question": "按 BU 看这个月销售量",
+    "expected_route": "sales",
+    "expected_skill": "sales_skill",
+    "expected_field": "sales_financial_perf.sales_qty"
+  },
+  {
+    "question": "SBU 维度财务业绩表现",
+    "expected_route": "sales",
+    "expected_skill": "sales_skill",
+    "expected_field": "sales_financial_perf.FINANCIAL_qty"
+  },
+  {
+    "question": "库存能否支撑下周排产",
+    "expected_route": "cross_domain",
+    "expected_domains": ["inventory", "planning"],
+    "expected_field": "weekly_rolling_plan.plan_qty"
+  },
+  {
+    "question": "结合库存和排产看哪些产品会缺料",
+    "expected_route": "cross_domain",
+    "expected_domains": ["inventory", "planning"],
+    "expected_field": "daily_inventory.TTL_Qty"
+  },
+  {
+    "question": "需求能不能被月计划覆盖",
+    "expected_route": "cross_domain",
+    "expected_domains": ["demand", "planning"],
+    "expected_field": "monthly_plan_approved.target_Out_panel_qty"
+  },
+  {
+    "question": "对比本月审批版计划和实际产出差多少",
+    "expected_route": "cross_domain",
+    "expected_domains": ["planning", "production"],
+    "expected_field": "production_actuals.Panel_qty"
+  },
+  {
+    "question": "forecast 增长会影响哪些产品库存",
+    "expected_route": "cross_domain",
+    "expected_domains": ["inventory", "demand"],
+    "expected_field": "daily_inventory.TTL_Qty"
+  },
+  {
+    "question": "销售和生产实绩对照一下，看看有没有背离",
+    "expected_route": "cross_domain",
+    "expected_domains": ["sales", "production"],
+    "expected_field": "sales_financial_perf.sales_qty"
+  },
+  {
+    "question": "对比月计划和销量差异",
+    "expected_route": "cross_domain",
+    "expected_domains": ["planning", "sales"],
+    "expected_field": "sales_financial_perf.sales_qty"
+  }
 ]

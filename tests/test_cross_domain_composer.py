@@ -9,15 +9,16 @@ class CrossDomainComposerTestCase(unittest.TestCase):
         composer = CrossDomainComposer()
         decision = RouteDecision(
             route="cross_domain",
-            matched_domains=["inventory", "production"],
-            target_tables=["daily_inventory", "daily_schedule", "work_in_progress"],
+            matched_domains=["inventory", "planning"],
+            target_tables=["daily_inventory", "daily_PLAN", "monthly_plan_approved"],
         )
 
         result = composer.compose(decision)
 
         self.assertFalse(result.use_legacy_fallback)
-        self.assertEqual(result.execution_order, ["inventory", "production"])
+        self.assertEqual(result.execution_order, ["inventory", "planning"])
         self.assertIn("daily_inventory", result.domain_tables["inventory"])
+        self.assertIn("库存域", result.domain_questions["inventory"])
 
     def test_merge_skill_results(self):
         composer = CrossDomainComposer()
@@ -29,27 +30,27 @@ class CrossDomainComposerTestCase(unittest.TestCase):
                 final_answer="库存域返回了 12 条结果。",
                 sql_query="select * from daily_inventory",
                 db_result=[["P1", 10]],
-                table_columns=["product_code", "available_qty"],
+                table_columns=["product_ID", "TTL_Qty"],
                 row_count=12,
             ),
         )
-        production_execution = SkillExecution(
-            domain="production",
-            plan=SkillPlan(skill_name="production_skill", domain="production", node_name="production_skill"),
+        planning_execution = SkillExecution(
+            domain="planning",
+            plan=SkillPlan(skill_name="planning_skill", domain="planning", node_name="planning_skill"),
             result=SkillResult(
-                skill_name="production_skill",
-                final_answer="生产域返回了 4 条结果。",
-                sql_query="select * from daily_schedule",
+                skill_name="planning_skill",
+                final_answer="计划域返回了 4 条结果。",
+                sql_query="select * from daily_PLAN",
                 db_result=[["P1", 8]],
-                table_columns=["product_code", "target_qty"],
+                table_columns=["product_ID", "target_qty"],
                 row_count=4,
             ),
         )
 
-        merge_result = composer.merge("结合库存和排产分析风险", [inventory_execution, production_execution])
+        merge_result = composer.merge("结合库存和排产分析风险", [inventory_execution, planning_execution])
 
-        self.assertEqual(merge_result.execution_order, ["inventory", "production"])
-        self.assertEqual(merge_result.successful_domains, ["inventory", "production"])
+        self.assertEqual(merge_result.execution_order, ["inventory", "planning"])
+        self.assertEqual(merge_result.successful_domains, ["inventory", "planning"])
         self.assertEqual(merge_result.final_result.table_columns[0], "domain")
         self.assertEqual(merge_result.final_result.row_count, 2)
         self.assertIn("库存域", merge_result.final_result.final_answer)

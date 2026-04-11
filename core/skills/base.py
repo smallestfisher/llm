@@ -8,6 +8,7 @@ from core.runtime.skill_runtime import (
     apply_filter_refinement,
     build_answer_payload,
     execute_sql,
+    harden_sql,
     llm_complete,
     sanitize_sql,
 )
@@ -27,6 +28,7 @@ class BaseSkill(ABC):
     domain_label = ""
     guard_scope = ""
     focus_areas: tuple[str, ...] = ()
+    field_conventions: tuple[str, ...] = ()
     sql_rules: tuple[str, ...] = ()
     answer_rules: tuple[str, ...] = ()
     default_tables: tuple[str, ...] = ()
@@ -91,29 +93,52 @@ class BaseSkill(ABC):
         prompt = build_text2sql_prompt(
             domain_label=self.domain_label or self.domain,
             focus_areas=self.focus_areas,
+            field_conventions=self.field_conventions,
             sql_rules=self.sql_rules,
             table_schema=state["table_schema"],
             question=f"【前情提要】\n{history_text}\n\n【当前用户问题】\n{effective_question}" if history_text else effective_question,
+            structured_filters=state.get("refined_filters") or {},
+        )
+        sql_query = harden_sql(
+            sanitize_sql(llm_complete(prompt, stream=True)),
+            structured_filters=state.get("refined_filters") or {},
+            question=effective_question,
+            domain=self.domain,
+            allowed_tables=self._allowed_tables(),
         )
         return {
-            "sql_query": sanitize_sql(llm_complete(prompt, stream=True)),
+            "sql_query": sql_query,
             "retry_count": state.get("retry_count") or 0,
         }
 
     def apply_execute_sql(self, state: dict[str, Any]) -> dict[str, Any]:
-        return execute_sql(state.get("sql_query", ""))
+        return execute_sql(
+            state.get("sql_query", ""),
+            question=state.get("normalized_question") or state["question"],
+            domain=self.domain,
+            structured_filters=state.get("refined_filters") or {},
+            allowed_tables=self._allowed_tables(),
+        )
 
     def apply_reflect_sql(self, state: dict[str, Any]) -> dict[str, Any]:
         prompt = build_reflect_sql_prompt(
             domain_label=self.domain_label or self.domain,
+            field_conventions=self.field_conventions,
             sql_rules=self.sql_rules,
             question=state["question"],
             table_schema=state["table_schema"],
             sql_query=state["sql_query"],
             error_message=state["sql_error"],
+            structured_filters=state.get("refined_filters") or {},
         )
         return {
-            "sql_query": sanitize_sql(llm_complete(prompt, stream=True)),
+            "sql_query": harden_sql(
+                sanitize_sql(llm_complete(prompt, stream=True)),
+                structured_filters=state.get("refined_filters") or {},
+                question=state.get("normalized_question") or state["question"],
+                domain=self.domain,
+                allowed_tables=self._allowed_tables(),
+            ),
             "retry_count": (state.get("retry_count") or 0) + 1,
             "sql_error": "",
         }
@@ -191,11 +216,16 @@ class BaseSkill(ABC):
         chat_history: list[str],
         decision: RouteDecision,
     ) -> dict[str, Any]:
+        normalized_question = (
+            decision.filters.get("_normalized_question")
+            if isinstance(decision.filters, dict)
+            else None
+        ) or question
         return {
             "question": question,
             "chat_history": list(chat_history or []),
             "table_schema": "",
-            "normalized_question": question,
+            "normalized_question": normalized_question,
             "lexicon_hits": [],
             "intent": decision.intent or f"{self.domain}_query",
             "intent_confidence": decision.confidence,

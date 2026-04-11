@@ -8,6 +8,8 @@ from core.heuristics import extract_recent_days, has_explicit_date
 
 _DATE_RANGE = re.compile(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})")
 _MONTH_RANGE = re.compile(r"(\d{4}[-/]\d{1,2})")
+_VERSION_RANGE = re.compile(r"(20\d{2}W\d{2})", re.IGNORECASE)
+_FACTORY_RANGE = re.compile(r"\b(B\d+_[A-Z]{2}|BJ\d{2}|CD\d{2}|MY\d{2}|WH\d{2})\b")
 
 
 def extract_shared_filters(question: str) -> dict[str, Any]:
@@ -20,6 +22,33 @@ def extract_shared_filters(question: str) -> dict[str, Any]:
 
     if any(token in q for token in ("最新", "最近一期", "最新一期")):
         filters["latest"] = True
+
+    if "今天" in q:
+        filters["relative_day"] = "today"
+    elif "昨天" in q:
+        filters["relative_day"] = "yesterday"
+
+    if any(token in q for token in ("这个月", "本月", "当月")):
+        filters["relative_month"] = "current_month"
+    elif any(token in q for token in ("上个月", "上月")):
+        filters["relative_month"] = "previous_month"
+    elif any(token in q for token in ("下个月", "下月")):
+        filters["relative_month"] = "next_month"
+
+    if any(token in q for token in ("这周", "本周")):
+        filters["relative_week"] = "current_week"
+    elif any(token in q for token in ("上周", "上一周")):
+        filters["relative_week"] = "previous_week"
+    elif any(token in q for token in ("下周", "下一周")):
+        filters["relative_week"] = "next_week"
+
+    version_match = _VERSION_RANGE.search(q)
+    if version_match:
+        filters["PM_VERSION"] = version_match.group(1).upper()
+
+    factory_match = _FACTORY_RANGE.search(q)
+    if factory_match:
+        filters["factory"] = factory_match.group(1).upper()
 
     dates = _DATE_RANGE.findall(q)
     if len(dates) >= 2:

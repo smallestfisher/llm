@@ -3,16 +3,22 @@ from __future__ import annotations
 from core.composer.cross_domain import CrossDomainComposer
 from core.router.intent_router import route_question
 from core.runtime.state import RouteDecision, SkillExecution
+from core.skills.demand.skill import DemandSkill
 from core.skills.generic.skill import GenericSkill
 from core.skills.inventory.skill import InventorySkill
+from core.skills.planning.skill import PlanningSkill
 from core.skills.production.skill import ProductionSkill
+from core.skills.sales.skill import SalesSkill
 
 
 _COMPOSER = CrossDomainComposer()
 _SKILLS = {
     "general": GenericSkill(),
     "production": ProductionSkill(),
+    "planning": PlanningSkill(),
     "inventory": InventorySkill(),
+    "demand": DemandSkill(),
+    "sales": SalesSkill(),
 }
 
 
@@ -82,12 +88,18 @@ class CompiledOrchestratedWorkflow:
                 skill = _SKILLS.get(domain)
                 if skill is None:
                     continue
+                domain_question = _COMPOSER.build_domain_question(domain, question)
                 subdecision = RouteDecision(
                     route=domain,
                     confidence=decision.confidence,
                     matched_domains=[domain],
                     target_tables=compose_result.domain_tables.get(domain, []),
-                    filters=dict(decision.filters or {}),
+                    filters={
+                        **dict(decision.filters or {}),
+                        "_normalized_question": domain_question,
+                        "_cross_domain": True,
+                        "_cross_domain_parent_question": question,
+                    },
                     reason=f"cross-domain step {index}/{len(compose_result.execution_order)}",
                     intent=decision.intent,
                 )
