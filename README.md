@@ -6,7 +6,7 @@
 
 `FastAPI Web + Local Auth DB + Router + Skills + Cross-domain Composer + Orchestrator`
 
-前端是正常 Web 应用，后端保留 LangGraph/SQL 查询能力中的核心编排思路，但主运行入口已经不再依赖旧的单体 `core/graph.py`。
+前端是正常 Web 应用，后端已经完全切换到新的分层编排架构。
 
 ## 当前能力
 
@@ -223,12 +223,6 @@ PYTHONPATH=. python3 tests/eval_runner.py
 - [PRODUCTION_TUNING_TEMPLATE.md](/home/y/llm/llm/PRODUCTION_TUNING_TEMPLATE.md)
   生产库字段精调模板
 
-## 保留的兼容文件
+## 当前结论
 
-以下文件仍保留，但不是主运行入口：
-
-- [core/graph.py](/home/y/llm/llm/core/graph.py)
-- [core/prompts.py](/home/y/llm/llm/core/prompts.py)
-- [core/lexicon.py](/home/y/llm/llm/core/lexicon.py)
-
-它们主要用于历史兼容和对照，不建议继续作为新功能入口扩展。
+仓库当前只保留新架构主链路，不再保留旧兼容运行入口。

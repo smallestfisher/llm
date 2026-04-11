@@ -1,6 +1,4 @@
 openai
-langgraph
-langgraph-checkpoint-sqlite
 sqlalchemy
 pymysql
 python-dotenv
@@ -10,7 +8,4 @@ uvicorn
 jinja2
 python-multipart
 itsdangerous
-tabulate
-aiosqlite
 bcrypt
-chromadb

@@ -269,21 +269,7 @@
 5. assistant 答案写回 `chat_messages`
 6. 审计写入 `audit_logs`
 
-## 7. 兼容与遗留
-
-以下文件保留，但不是主运行链路：
-
-- [core/graph.py](/home/y/llm/llm/core/graph.py)
-- [core/prompts.py](/home/y/llm/llm/core/prompts.py)
-- [core/lexicon.py](/home/y/llm/llm/core/lexicon.py)
-
-保留原因：
-
-- 老脚本兼容
-- 对照参考
-- 避免一次性删除导致外部调用失效
-
-## 8. 文档维护原则
+## 7. 文档维护原则
 
 后续如果再调生产库字段或 skill：
 
