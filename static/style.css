@@ -205,6 +205,31 @@ button {
   flex-wrap: wrap;
 }
 
+.thread-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border-radius: 18px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.42);
+  transition: 160ms ease;
+}
+
+.thread-item:hover,
+.thread-item:focus-within {
+  border-color: rgba(59, 130, 246, 0.12);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.thread-item.active {
+  border-color: rgba(59, 130, 246, 0.18);
+  background: rgba(59, 130, 246, 0.08);
+  box-shadow: 0 12px 26px rgba(59, 130, 246, 0.08);
+}
+
 .thread-link,
 .nav-link {
   display: flex;
@@ -217,6 +242,234 @@ button {
   transition: 160ms ease;
   min-width: 0;
   width: 100%;
+}
+
+.thread-delete-form {
+  display: flex;
+}
+
+.thread-delete-button {
+  width: 38px;
+  height: 38px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: 160ms ease;
+}
+
+.thread-item:hover .thread-delete-button,
+.thread-item:focus-within .thread-delete-button,
+.thread-item.active .thread-delete-button {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.thread-delete-button:hover {
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--danger);
+}
+
+.thread-delete-button svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.thread-delete-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.thread-delete-button:disabled:hover {
+  background: transparent;
+  color: var(--muted);
+}
+
+.thread-item .thread-link {
+  background: transparent;
+}
+
+.thread-item.active .thread-link.active {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.thread-item .thread-link:hover {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.thread-item.active .thread-link:hover {
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.thread-link-title,
+.nav-link-label {
+  flex: 1;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.conversation-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 18px;
+  padding-bottom: 18px;
+}
+
+.conversation-title {
+  margin: 6px 0 0;
+  font-size: 1.1rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.button-danger {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.16);
+  color: var(--danger);
+}
+
+.button-danger:hover {
+  background: rgba(220, 38, 38, 0.12);
+}
+
+.button:disabled,
+.button[disabled] {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
+  box-shadow: none;
+}
+
+.button:disabled:hover,
+.button[disabled]:hover {
+  transform: none;
+}
+
+.composer-panel {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 14px;
+  position: static;
+  min-width: 0;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.1);
+}
+
+.field textarea {
+  min-height: 84px;
+  resize: vertical;
+  line-height: 1.7;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
+}
+
+.composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.empty-state {
+  min-height: 320px;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  justify-items: start;
+}
+
+.message-starter {
+  max-width: 680px;
+  border-style: dashed;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 249, 255, 0.88));
+}
+
+.message {
+  display: grid;
+  gap: 10px;
+  max-width: min(100%, 840px);
+  padding: 16px 18px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+}
+
+.message-user {
+  margin-left: auto;
+  max-width: min(72%, 720px);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.14), rgba(59, 130, 246, 0.05));
+  border-color: rgba(59, 130, 246, 0.14);
+}
+
+.conversation-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  min-width: 0;
+  overflow: auto;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(248, 250, 252, 0.4));
+}
+
+.result-table th {
+  background: #f3f7ff;
+  color: var(--muted-strong);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sql-box pre,
+.json-cell {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: var(--mono);
+  font-size: 0.84rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.thread-link-meta,
+.nav-link-meta,
+.empty-copy,
+.page-subtitle,
+.result-meta,
+.profile-meta {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.thread-link-title,
+.nav-link-label {
+  flex: 1;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
 }
 
 .nav-icon-link {
@@ -1065,7 +1318,8 @@ button {
 
   .topbar,
   .composer-footer,
-  .inline-form {
+  .inline-form,
+  .conversation-toolbar {
     flex-direction: column;
     align-items: stretch;
   }
@@ -1076,6 +1330,15 @@ button {
 
   .form-grid-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .thread-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .thread-delete-button {
+    opacity: 1;
+    transform: none;
   }
 }
 

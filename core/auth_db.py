@@ -256,6 +256,70 @@ def build_seed_history(thread: ChatThread) -> list[str]:
     return history
 
 
+def list_thread_messages(session, thread: ChatThread) -> list[ChatMessage]:
+    return (
+        session.query(ChatMessage)
+        .filter(ChatMessage.thread_id == thread.id)
+        .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
+        .all()
+    )
+
+
+def build_history_from_messages(messages: Sequence[ChatMessage]) -> list[str]:
+    history = []
+    pending_question: Optional[str] = None
+    for message in messages:
+        if message.role == "user":
+            pending_question = message.content
+            continue
+        if message.role == "assistant" and pending_question:
+            history.append(f"问: {pending_question}\n答: {message.content}")
+            pending_question = None
+    return history
+
+
+def get_last_user_message(session, thread: ChatThread) -> Optional[ChatMessage]:
+    return (
+        session.query(ChatMessage)
+        .filter(ChatMessage.thread_id == thread.id, ChatMessage.role == "user")
+        .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
+        .first()
+    )
+
+
+def get_last_assistant_message(session, thread: ChatThread) -> Optional[ChatMessage]:
+    return (
+        session.query(ChatMessage)
+        .filter(ChatMessage.thread_id == thread.id, ChatMessage.role == "assistant")
+        .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
+        .first()
+    )
+
+
+def build_regenerate_seed_history(session, thread: ChatThread) -> tuple[list[str], Optional[ChatMessage], Optional[ChatMessage]]:
+    messages = list_thread_messages(session, thread)
+    last_user_index = None
+    last_assistant_index = None
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if last_assistant_index is None and message.role == "assistant":
+            last_assistant_index = index
+            continue
+        if message.role == "user":
+            last_user_index = index
+            break
+
+    if last_user_index is None:
+        return [], None, None
+
+    last_user = messages[last_user_index]
+    if last_assistant_index is None or last_assistant_index < last_user_index:
+        return build_history_from_messages(messages[:last_user_index]), last_user, None
+
+    history = build_history_from_messages(messages[:last_user_index])
+    return history, last_user, messages[last_assistant_index]
+
+
 def init_local_db() -> None:
     Base.metadata.create_all(bind=engine)
     inspector = inspect(engine)

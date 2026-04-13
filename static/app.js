@@ -124,7 +124,36 @@ function handleStreamLine(line, handlers) {
   }
   if (payload.type === "error") {
     handlers.onError?.(payload);
+    return;
   }
+  if (payload.type === "cancelled") {
+    handlers.onCancelled?.(payload);
+  }
+}
+
+function initDeleteForms() {
+  const forms = document.querySelectorAll("[data-confirm-delete]");
+  forms.forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      const button = form.querySelector("button[type='submit']");
+      if (button?.disabled) {
+        event.preventDefault();
+        return;
+      }
+      const confirmed = window.confirm("删除后将无法恢复，该对话下的全部消息都会被清除。确认删除吗？");
+      if (!confirmed) {
+        event.preventDefault();
+        return;
+      }
+      if (button) {
+        button.disabled = true;
+        button.dataset.originalText = button.textContent;
+        if (!button.querySelector("svg")) {
+          button.textContent = "删除中...";
+        }
+      }
+    });
+  });
 }
 
 function initChat() {
@@ -136,10 +165,57 @@ function initChat() {
   const form = document.getElementById("chat-form");
   const input = document.getElementById("question-input");
   const button = document.getElementById("send-button");
+  const regenerateButton = document.getElementById("regenerate-button");
+  const deleteThreadButton = document.getElementById("delete-thread-button");
   const messages = document.getElementById("chat-messages");
   const threadId = root.getAttribute("data-thread-id");
   const promptButtons = document.querySelectorAll("[data-prompt]");
   let isComposing = false;
+  let activeController = null;
+  let runCompleted = true;
+
+  const setDeleteButtonDisabled = (disabled) => {
+    if (deleteThreadButton) {
+      deleteThreadButton.disabled = disabled;
+    }
+  };
+
+  const setSidebarDeleteButtonsDisabled = (disabled) => {
+    document.querySelectorAll(".thread-delete-button").forEach((el) => {
+      el.disabled = disabled;
+    });
+  };
+
+  const setDeleteActionsDisabled = (disabled) => {
+    setDeleteButtonDisabled(disabled);
+    setSidebarDeleteButtonsDisabled(disabled);
+  };
+
+  let activeDeleteLock = false;
+
+  const enableDeleteActionsIfIdle = () => {
+    if (!activeDeleteLock) {
+      setDeleteActionsDisabled(false);
+    }
+  };
+
+  const lockDeleteActions = () => {
+    activeDeleteLock = true;
+    setDeleteActionsDisabled(true);
+  };
+
+  const unlockDeleteActions = () => {
+    activeDeleteLock = false;
+    setDeleteActionsDisabled(false);
+  };
+
+  document.querySelectorAll("[data-confirm-delete]").forEach((deleteForm) => {
+    deleteForm.addEventListener("submit", () => {
+      lockDeleteActions();
+    });
+  });
+
+  enableDeleteActionsIfIdle();
 
   const removeEmptyState = () => {
     const emptyState = messages.querySelector(".empty-state");
@@ -152,6 +228,129 @@ function initChat() {
     input.style.height = "auto";
     input.style.height = `${Math.max(84, input.scrollHeight)}px`;
   };
+
+  const setIdleState = () => {
+    activeController = null;
+    button.disabled = false;
+    button.textContent = "发送";
+    regenerateButton.disabled = false;
+    enableDeleteActionsIfIdle();
+    input.focus();
+  };
+
+  const setBusyState = () => {
+    button.disabled = false;
+    button.textContent = "停止";
+    regenerateButton.disabled = true;
+    setDeleteActionsDisabled(true);
+  };
+
+  const streamHandlers = (thinkingMessage) => ({
+    onStatus(payload) {
+      if (payload.thread_id && payload.thread_id !== threadId) {
+        return;
+      }
+      updateThinkingMessage(thinkingMessage, payload.message || "正在处理中...");
+    },
+    onFinal(payload) {
+      if (payload.thread_id !== threadId) {
+        return;
+      }
+      runCompleted = true;
+      removeThinkingMessage(thinkingMessage);
+      appendMessage(messages, "assistant", payload.answer, payload.metadata);
+      if (payload.thread_title) {
+        document.title = `${payload.thread_title} | BOE Data Copilot`;
+      }
+    },
+    onError(payload) {
+      if (payload.thread_id && payload.thread_id !== threadId) {
+        return;
+      }
+      runCompleted = true;
+      removeThinkingMessage(thinkingMessage);
+      appendMessage(messages, "assistant", payload.detail || "处理出错");
+    },
+    onCancelled(payload) {
+      if (payload.thread_id && payload.thread_id !== threadId) {
+        return;
+      }
+      runCompleted = true;
+      removeThinkingMessage(thinkingMessage);
+      appendMessage(messages, "assistant", "已停止本次回复。");
+    },
+  });
+
+  async function consumeStream(response, thinkingMessage) {
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail || `请求失败 (${response.status})`);
+    }
+    if (!response.body) {
+      throw new Error("响应体为空");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const handlers = streamHandlers(thinkingMessage);
+
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        handleStreamLine(line, handlers);
+      }
+
+      if (done) {
+        if (buffer.trim()) {
+          handleStreamLine(buffer, handlers);
+        }
+        break;
+      }
+    }
+  }
+
+  async function startRun({ url, question, appendUser = false }) {
+    if (activeController) {
+      return;
+    }
+
+    removeEmptyState();
+    if (appendUser && question) {
+      appendMessage(messages, "user", question);
+    }
+    const thinkingMessage = appendThinkingMessage(messages);
+    runCompleted = false;
+    activeController = new AbortController();
+    setBusyState();
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: question != null ? JSON.stringify({ question }) : null,
+        signal: activeController.signal,
+      });
+      await consumeStream(response, thinkingMessage);
+      removeThinkingMessage(thinkingMessage);
+    } catch (error) {
+      removeThinkingMessage(thinkingMessage);
+      if (error.name === "AbortError") {
+        if (!runCompleted) {
+          appendMessage(messages, "assistant", "已停止本次回复。");
+        }
+      } else {
+        appendMessage(messages, "assistant", `处理出错：${error.message}`);
+      }
+    } finally {
+      runCompleted = true;
+      setIdleState();
+    }
+  }
 
   syncHeight();
   input.addEventListener("input", syncHeight);
@@ -177,97 +376,241 @@ function initChat() {
     });
   });
 
+  button.addEventListener("click", async (event) => {
+    if (!activeController) {
+      return;
+    }
+    event.preventDefault();
+    runCompleted = true;
+    activeController.abort();
+    try {
+      await fetch(`/api/chat/${threadId}/cancel`, { method: "POST" });
+    } catch {
+      // ignore cancel request errors
+    }
+  });
+
+  regenerateButton.addEventListener("click", async () => {
+    if (activeController) {
+      return;
+    }
+    await startRun({ url: `/api/chat/${threadId}/regenerate`, question: null, appendUser: false });
+  });
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (activeController) {
+      return;
+    }
     const question = input.value.trim();
     if (!question) {
       input.focus();
       return;
     }
 
-    removeEmptyState();
-    appendMessage(messages, "user", question);
-    const thinkingMessage = appendThinkingMessage(messages);
-    button.disabled = true;
-    button.textContent = "处理中...";
     input.value = "";
     syncHeight();
+    await startRun({ url: `/api/chat/${threadId}`, question, appendUser: true });
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  initDeleteForms();
+  initChat();
+});
+
+  const removeEmptyState = () => {
+    const emptyState = messages.querySelector(".empty-state");
+    if (emptyState) {
+      emptyState.remove();
+    }
+  };
+
+  const syncHeight = () => {
+    input.style.height = "auto";
+    input.style.height = `${Math.max(84, input.scrollHeight)}px`;
+  };
+
+  const setIdleState = () => {
+    activeController = null;
+    button.disabled = false;
+    button.textContent = "发送";
+    regenerateButton.disabled = false;
+    input.focus();
+  };
+
+  const setBusyState = () => {
+    button.disabled = false;
+    button.textContent = "停止";
+    regenerateButton.disabled = true;
+  };
+
+  const streamHandlers = (thinkingMessage) => ({
+    onStatus(payload) {
+      if (payload.thread_id && payload.thread_id !== threadId) {
+        return;
+      }
+      updateThinkingMessage(thinkingMessage, payload.message || "正在处理中...");
+    },
+    onFinal(payload) {
+      if (payload.thread_id !== threadId) {
+        return;
+      }
+      runCompleted = true;
+      removeThinkingMessage(thinkingMessage);
+      appendMessage(messages, "assistant", payload.answer, payload.metadata);
+      if (payload.thread_title) {
+        document.title = `${payload.thread_title} | BOE Data Copilot`;
+      }
+    },
+    onError(payload) {
+      if (payload.thread_id && payload.thread_id !== threadId) {
+        return;
+      }
+      runCompleted = true;
+      removeThinkingMessage(thinkingMessage);
+      appendMessage(messages, "assistant", payload.detail || "处理出错");
+    },
+    onCancelled(payload) {
+      if (payload.thread_id && payload.thread_id !== threadId) {
+        return;
+      }
+      runCompleted = true;
+      removeThinkingMessage(thinkingMessage);
+      appendMessage(messages, "assistant", "已停止本次回复。");
+    },
+  });
+
+  async function consumeStream(response, thinkingMessage) {
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail || `请求失败 (${response.status})`);
+    }
+    if (!response.body) {
+      throw new Error("响应体为空");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const handlers = streamHandlers(thinkingMessage);
+
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        handleStreamLine(line, handlers);
+      }
+
+      if (done) {
+        if (buffer.trim()) {
+          handleStreamLine(buffer, handlers);
+        }
+        break;
+      }
+    }
+  }
+
+  async function startRun({ url, question, appendUser = false }) {
+    if (activeController) {
+      return;
+    }
+
+    removeEmptyState();
+    if (appendUser && question) {
+      appendMessage(messages, "user", question);
+    }
+    const thinkingMessage = appendThinkingMessage(messages);
+    runCompleted = false;
+    activeController = new AbortController();
+    setBusyState();
 
     try {
-      const response = await fetch(`/api/chat/${threadId}`, {
+      const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
+        body: question != null ? JSON.stringify({ question }) : null,
+        signal: activeController.signal,
       });
-      if (!response.ok) {
-        throw new Error(`请求失败 (${response.status})`);
-      }
-
-      if (!response.body) {
-        throw new Error("响应体为空");
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          handleStreamLine(line, {
-            onStatus(payload) {
-              updateThinkingMessage(thinkingMessage, payload.message || "正在处理中...");
-            },
-            onFinal(payload) {
-              removeThinkingMessage(thinkingMessage);
-              appendMessage(messages, "assistant", payload.answer, payload.metadata);
-              if (payload.thread_title) {
-                document.title = `${payload.thread_title} | BOE Data Copilot`;
-              }
-            },
-            onError(payload) {
-              removeThinkingMessage(thinkingMessage);
-              appendMessage(messages, "assistant", payload.detail || "处理出错");
-            },
-          });
-        }
-
-        if (done) {
-          if (buffer.trim()) {
-            handleStreamLine(buffer, {
-              onStatus(payload) {
-                updateThinkingMessage(thinkingMessage, payload.message || "正在处理中...");
-              },
-              onFinal(payload) {
-                removeThinkingMessage(thinkingMessage);
-                appendMessage(messages, "assistant", payload.answer, payload.metadata);
-                if (payload.thread_title) {
-                  document.title = `${payload.thread_title} | BOE Data Copilot`;
-                }
-              },
-              onError(payload) {
-                removeThinkingMessage(thinkingMessage);
-                appendMessage(messages, "assistant", payload.detail || "处理出错");
-              },
-            });
-          }
-          break;
-        }
-      }
-
+      await consumeStream(response, thinkingMessage);
       removeThinkingMessage(thinkingMessage);
     } catch (error) {
       removeThinkingMessage(thinkingMessage);
-      appendMessage(messages, "assistant", `处理出错：${error.message}`);
+      if (error.name === "AbortError") {
+        if (!runCompleted) {
+          appendMessage(messages, "assistant", "已停止本次回复。");
+        }
+      } else {
+        appendMessage(messages, "assistant", `处理出错：${error.message}`);
+      }
     } finally {
-      button.disabled = false;
-      button.textContent = "发送";
-      input.focus();
+      runCompleted = true;
+      setIdleState();
     }
+  }
+
+  syncHeight();
+  input.addEventListener("input", syncHeight);
+  input.addEventListener("compositionstart", () => {
+    isComposing = true;
+  });
+  input.addEventListener("compositionend", () => {
+    isComposing = false;
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey || isComposing) {
+      return;
+    }
+    event.preventDefault();
+    form.requestSubmit();
+  });
+
+  promptButtons.forEach((buttonEl) => {
+    buttonEl.addEventListener("click", () => {
+      input.value = buttonEl.getAttribute("data-prompt") || "";
+      syncHeight();
+      input.focus();
+    });
+  });
+
+  button.addEventListener("click", async (event) => {
+    if (!activeController) {
+      return;
+    }
+    event.preventDefault();
+    runCompleted = true;
+    activeController.abort();
+    try {
+      await fetch(`/api/chat/${threadId}/cancel`, { method: "POST" });
+    } catch {
+      // ignore cancel request errors
+    }
+  });
+
+  regenerateButton.addEventListener("click", async () => {
+    if (activeController) {
+      return;
+    }
+    await startRun({ url: `/api/chat/${threadId}/regenerate`, question: null, appendUser: false });
+  });
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (activeController) {
+      return;
+    }
+    const question = input.value.trim();
+    if (!question) {
+      input.focus();
+      return;
+    }
+
+    input.value = "";
+    syncHeight();
+    await startRun({ url: `/api/chat/${threadId}`, question, appendUser: true });
   });
 }
 

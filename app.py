@@ -1,7 +1,11 @@
+import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Optional
+
+from uuid import uuid4
 
 from fastapi import FastAPI, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
@@ -18,6 +22,7 @@ from core.auth_db import (
     SessionLocal,
     User,
     append_chat_message,
+    build_regenerate_seed_history,
     build_seed_history,
     change_password,
     create_user,
@@ -39,6 +44,15 @@ templates = Jinja2Templates(directory="templates")
 
 class ChatPayload(BaseModel):
     question: str
+
+
+@dataclass
+class ActiveRun:
+    run_id: str
+    cancel_event: asyncio.Event
+
+
+_ACTIVE_RUNS: dict[str, ActiveRun] = {}
 
 
 @asynccontextmanager
@@ -173,6 +187,35 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
+def _cancel_active_run(thread_public_id: str) -> Optional[ActiveRun]:
+    active_run = _ACTIVE_RUNS.get(thread_public_id)
+    if active_run:
+        active_run.cancel_event.set()
+    return active_run
+
+
+def _set_active_run(thread_public_id: str) -> ActiveRun:
+    _cancel_active_run(thread_public_id)
+    active_run = ActiveRun(run_id=str(uuid4()), cancel_event=asyncio.Event())
+    _ACTIVE_RUNS[thread_public_id] = active_run
+    return active_run
+
+
+def _is_run_cancelled(thread_public_id: str, run_id: str) -> bool:
+    active_run = _ACTIVE_RUNS.get(thread_public_id)
+    if not active_run:
+        return True
+    if active_run.run_id != run_id:
+        return True
+    return active_run.cancel_event.is_set()
+
+
+def _clear_active_run(thread_public_id: str, run_id: str) -> None:
+    active_run = _ACTIVE_RUNS.get(thread_public_id)
+    if active_run and active_run.run_id == run_id:
+        _ACTIVE_RUNS.pop(thread_public_id, None)
+
+
 def _thinking_status_for_node(node_name: str) -> str:
     status_map = {
         "route_intent": "🧭 正在识别问题所属领域...",
@@ -208,6 +251,138 @@ def serialize_message(message) -> dict:
         "metadata": message.payload,
         "created_at": message.created_at.isoformat() if message.created_at else "",
     }
+
+
+async def _run_chat_stream(
+    *,
+    question: str,
+    user_id: int,
+    ip_address: str,
+    thread_public_id: str,
+    thread_title: str,
+    seed_history: Optional[list[str]] = None,
+):
+    active_run = _set_active_run(thread_public_id)
+
+    async def event_stream():
+        final_payload = None
+        state_snapshot = {}
+        cancelled = False
+        try:
+            yield _ndjson_line({"type": "status", "message": "正在启动工作流...", "thread_id": thread_public_id})
+            inputs = {"question": question, "chat_history": list(seed_history or [])}
+            config = {"configurable": {"thread_id": f"{thread_public_id}:{active_run.run_id}"}}
+            engine = workflow.compile()
+            async for output in engine.astream(inputs, config=config):
+                if _is_run_cancelled(thread_public_id, active_run.run_id):
+                    cancelled = True
+                    break
+                for node_name, node_output in output.items():
+                    if _is_run_cancelled(thread_public_id, active_run.run_id):
+                        cancelled = True
+                        break
+                    state_snapshot.update(node_output or {})
+                    status_text = _thinking_status_for_node(node_name)
+                    if status_text:
+                        yield _ndjson_line({"type": "status", "node": node_name, "message": status_text, "thread_id": thread_public_id})
+                    if node_name == "generate_answer":
+                        final_answer = node_output.get("final_answer", "")
+                        metadata = {
+                            "columns": state_snapshot.get("table_columns") or [],
+                            "rows": state_snapshot.get("db_result") or [],
+                            "row_count": state_snapshot.get("row_count"),
+                            "truncated": bool(state_snapshot.get("truncated")),
+                            "sql_query": state_snapshot.get("sql_query", ""),
+                        }
+                        final_payload = {
+                            "type": "final",
+                            "answer": final_answer,
+                            "thread_id": thread_public_id,
+                            "thread_title": thread_title,
+                            "metadata": metadata,
+                        }
+                        yield _ndjson_line(final_payload)
+                if cancelled:
+                    break
+
+            if cancelled:
+                db_cancel = SessionLocal()
+                try:
+                    cancel_user = db_cancel.query(User).filter(User.id == user_id).first()
+                    log_audit(
+                        db_cancel,
+                        action="chat_query",
+                        actor=cancel_user,
+                        target_type="thread",
+                        target_id=thread_public_id,
+                        status="cancelled",
+                        ip_address=ip_address,
+                        details={"question": question[:120]},
+                    )
+                    db_cancel.commit()
+                except Exception:
+                    db_cancel.rollback()
+                finally:
+                    db_cancel.close()
+                yield _ndjson_line({"type": "cancelled", "thread_id": thread_public_id})
+                return
+
+            if final_payload:
+                db_save = SessionLocal()
+                try:
+                    save_user = db_save.query(User).filter(User.id == user_id).first()
+                    save_thread = db_save.query(ChatThread).filter(ChatThread.public_id == thread_public_id).first()
+                    if save_thread:
+                        append_chat_message(
+                            db_save,
+                            save_thread,
+                            "assistant",
+                            final_payload["answer"],
+                            metadata=final_payload["metadata"],
+                        )
+                    log_audit(
+                        db_save,
+                        action="chat_query",
+                        actor=save_user,
+                        target_type="thread",
+                        target_id=thread_public_id,
+                        ip_address=ip_address,
+                        details={"question": question[:120]},
+                    )
+                    db_save.commit()
+                except Exception:
+                    db_save.rollback()
+                    raise
+                finally:
+                    db_save.close()
+        except Exception as exc:
+            error_message = f"处理出错：{exc}"
+            db_error = SessionLocal()
+            try:
+                error_user = db_error.query(User).filter(User.id == user_id).first()
+                error_thread = db_error.query(ChatThread).filter(ChatThread.public_id == thread_public_id).first()
+                if error_thread:
+                    append_chat_message(db_error, error_thread, "assistant", error_message)
+                log_audit(
+                    db_error,
+                    action="chat_query",
+                    actor=error_user,
+                    target_type="thread",
+                    target_id=thread_public_id,
+                    status="failed",
+                    ip_address=ip_address,
+                    details={"question": question[:120], "error": str(exc)},
+                )
+                db_error.commit()
+            except Exception:
+                db_error.rollback()
+            finally:
+                db_error.close()
+            yield _ndjson_line({"type": "error", "detail": error_message, "thread_id": thread_public_id})
+        finally:
+            _clear_active_run(thread_public_id, active_run.run_id)
+
+    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -473,6 +648,7 @@ async def chat_api(request: Request, public_id: str, payload: ChatPayload):
         if not question:
             return JSONResponse({"detail": "问题不能为空"}, status_code=status.HTTP_400_BAD_REQUEST)
 
+        history_before_turn = build_seed_history(thread)
         append_chat_message(db, thread, "user", question)
         db.commit()
         user_id = user.id
@@ -482,100 +658,112 @@ async def chat_api(request: Request, public_id: str, payload: ChatPayload):
     finally:
         db.close()
 
-    async def event_stream():
-        final_payload = None
-        state_snapshot = {}
-        try:
-            yield _ndjson_line({"type": "status", "message": "正在启动工作流..."})
-            inputs = {"question": question}
-            db_history = SessionLocal()
-            try:
-                stream_thread = db_history.query(ChatThread).filter(ChatThread.public_id == thread_public_id).first()
-                if stream_thread:
-                    inputs["chat_history"] = build_seed_history(stream_thread)
-            finally:
-                db_history.close()
+    return await _run_chat_stream(
+        question=question,
+        user_id=user_id,
+        ip_address=ip_address,
+        thread_public_id=thread_public_id,
+        thread_title=thread_title,
+        seed_history=history_before_turn,
+    )
 
-            config = {"configurable": {"thread_id": thread_public_id}}
-            engine = workflow.compile()
-            async for output in engine.astream(inputs, config=config):
-                for node_name, node_output in output.items():
-                    state_snapshot.update(node_output or {})
-                    status_text = _thinking_status_for_node(node_name)
-                    if status_text:
-                        yield _ndjson_line({"type": "status", "node": node_name, "message": status_text})
-                    if node_name == "generate_answer":
-                        final_answer = node_output.get("final_answer", "")
-                        metadata = {
-                            "columns": state_snapshot.get("table_columns") or [],
-                            "rows": state_snapshot.get("db_result") or [],
-                            "row_count": state_snapshot.get("row_count"),
-                            "truncated": bool(state_snapshot.get("truncated")),
-                            "sql_query": state_snapshot.get("sql_query", ""),
-                        }
-                        final_payload = {
-                            "type": "final",
-                            "answer": final_answer,
-                            "thread_id": thread_public_id,
-                            "thread_title": thread_title,
-                            "metadata": metadata,
-                        }
-                        yield _ndjson_line(final_payload)
 
-            if final_payload:
-                db_save = SessionLocal()
-                try:
-                    save_user = db_save.query(User).filter(User.id == user_id).first()
-                    save_thread = db_save.query(ChatThread).filter(ChatThread.public_id == thread_public_id).first()
-                    if save_thread:
-                        append_chat_message(
-                            db_save,
-                            save_thread,
-                            "assistant",
-                            final_payload["answer"],
-                            metadata=final_payload["metadata"],
-                        )
-                    log_audit(
-                        db_save,
-                        action="chat_query",
-                        actor=save_user,
-                        target_type="thread",
-                        target_id=thread_public_id,
-                        ip_address=ip_address,
-                        details={"question": question[:120]},
-                    )
-                    db_save.commit()
-                except Exception:
-                    db_save.rollback()
-                    raise
-                finally:
-                    db_save.close()
-        except Exception as exc:
-            error_message = f"处理出错：{exc}"
-            db_error = SessionLocal()
-            try:
-                error_user = db_error.query(User).filter(User.id == user_id).first()
-                error_thread = db_error.query(ChatThread).filter(ChatThread.public_id == thread_public_id).first()
-                if error_thread:
-                    append_chat_message(db_error, error_thread, "assistant", error_message)
-                log_audit(
-                    db_error,
-                    action="chat_query",
-                    actor=error_user,
-                    target_type="thread",
-                    target_id=thread_public_id,
-                    status="failed",
-                    ip_address=ip_address,
-                    details={"question": question[:120], "error": str(exc)},
-                )
-                db_error.commit()
-            except Exception:
-                db_error.rollback()
-            finally:
-                db_error.close()
-            yield _ndjson_line({"type": "error", "detail": error_message})
+@app.post("/api/chat/{public_id}/cancel")
+async def cancel_chat_api(request: Request, public_id: str):
+    db = next(get_db())
+    try:
+        user = current_user(request, db)
+        if not user:
+            return JSONResponse({"detail": "未登录"}, status_code=status.HTTP_401_UNAUTHORIZED)
+        thread = get_thread_for_user(db, user, public_id)
+        if not thread:
+            return JSONResponse({"detail": "对话不存在"}, status_code=status.HTTP_404_NOT_FOUND)
+    finally:
+        db.close()
 
-    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
+    active_run = _cancel_active_run(public_id)
+    if not active_run:
+        return JSONResponse({"detail": "当前没有进行中的回复"}, status_code=status.HTTP_409_CONFLICT)
+    return JSONResponse({"ok": True, "thread_id": public_id})
+
+
+@app.post("/threads/{public_id}/delete")
+async def delete_thread(request: Request, public_id: str):
+    db = next(get_db())
+    try:
+        user = current_user(request, db)
+        if not user:
+            return redirect("/login")
+
+        thread = get_thread_for_user(db, user, public_id)
+        if not thread:
+            push_flash(request, "error", "对话不存在或无权删除。")
+            return redirect("/")
+
+        _cancel_active_run(public_id)
+        deleted_title = thread.title
+        db.delete(thread)
+        log_audit(
+            db,
+            action="thread_delete",
+            actor=user,
+            target_type="thread",
+            target_id=public_id,
+            ip_address=client_ip(request),
+            details={"title": deleted_title},
+        )
+        db.commit()
+
+        next_thread = list_threads(db, user)
+        push_flash(request, "success", "对话已删除。")
+        if next_thread:
+            return redirect(f"/threads/{next_thread[0].public_id}")
+        return redirect("/")
+    finally:
+        db.close()
+
+
+@app.post("/api/chat/{public_id}/regenerate")
+async def regenerate_chat_api(request: Request, public_id: str):
+    db = next(get_db())
+    try:
+        user = current_user(request, db)
+        if not user:
+            return JSONResponse({"detail": "未登录"}, status_code=status.HTTP_401_UNAUTHORIZED)
+
+        thread = get_thread_for_user(db, user, public_id)
+        if not thread:
+            return JSONResponse({"detail": "对话不存在"}, status_code=status.HTTP_404_NOT_FOUND)
+
+        active_run = _ACTIVE_RUNS.get(public_id)
+        if active_run and not active_run.cancel_event.is_set():
+            return JSONResponse({"detail": "请先停止当前回复"}, status_code=status.HTTP_409_CONFLICT)
+
+        history_before_turn, last_user_message, last_assistant_message = build_regenerate_seed_history(db, thread)
+        if not last_user_message:
+            return JSONResponse({"detail": "没有可重新生成的用户问题"}, status_code=status.HTTP_400_BAD_REQUEST)
+        if not last_assistant_message:
+            return JSONResponse({"detail": "最后一轮回复尚未完成，无法重新生成"}, status_code=status.HTTP_409_CONFLICT)
+
+        db.delete(last_assistant_message)
+        thread.updated_at = utcnow()
+        db.commit()
+        question = last_user_message.content
+        user_id = user.id
+        ip_address = client_ip(request)
+        thread_public_id = thread.public_id
+        thread_title = thread.title
+    finally:
+        db.close()
+
+    return await _run_chat_stream(
+        question=question,
+        user_id=user_id,
+        ip_address=ip_address,
+        thread_public_id=thread_public_id,
+        thread_title=thread_title,
+        seed_history=history_before_turn,
+    )
 
 
 @app.get("/profile/password", response_class=HTMLResponse)
