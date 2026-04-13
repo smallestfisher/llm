@@ -320,6 +320,45 @@ def build_regenerate_seed_history(session, thread: ChatThread) -> tuple[list[str
     return history, last_user, messages[last_assistant_index]
 
 
+def build_regenerate_seed_history_for_message(
+    session,
+    thread: ChatThread,
+    assistant_message_id: int,
+) -> tuple[list[str], Optional[ChatMessage], Optional[ChatMessage]]:
+    messages = list_thread_messages(session, thread)
+    target_index = None
+    for index, message in enumerate(messages):
+        if message.id == assistant_message_id and message.role == "assistant":
+            target_index = index
+            break
+
+    if target_index is None:
+        return [], None, None
+
+    user_index = None
+    for index in range(target_index - 1, -1, -1):
+        if messages[index].role == "user":
+            user_index = index
+            break
+
+    if user_index is None:
+        return [], None, None
+
+    history = build_history_from_messages(messages[:user_index])
+    return history, messages[user_index], messages[target_index]
+
+
+def get_chat_message_for_thread(session, thread: ChatThread, message_id: int) -> Optional[ChatMessage]:
+    return (
+        session.query(ChatMessage)
+        .filter(
+            ChatMessage.thread_id == thread.id,
+            ChatMessage.id == message_id,
+        )
+        .first()
+    )
+
+
 def init_local_db() -> None:
     Base.metadata.create_all(bind=engine)
     inspector = inspect(engine)

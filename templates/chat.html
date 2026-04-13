@@ -11,9 +11,6 @@
       <div class="eyebrow">Current conversation</div>
       <h2 class="conversation-title">{{ selected_thread.title }}</h2>
     </div>
-    <div class="conversation-toolbar-actions">
-      <button class="button button-secondary button-compact" id="regenerate-button" type="button">重新生成</button>
-    </div>
   </section>
 
   <section class="panel conversation-panel" id="chat-messages">
@@ -55,6 +52,15 @@
               {% endfor %}
             </tbody>
           </table>
+        </div>
+        {% endif %}
+        {% if message.role == "assistant" %}
+        <div class="message-actions">
+          <button
+            type="button"
+            class="button button-secondary button-compact message-regenerate-button"
+            data-regenerate-message-id="{{ message.id }}"
+          >重新生成此条</button>
         </div>
         {% endif %}
         {% if message.role == "assistant" and message.metadata.sql_query %}

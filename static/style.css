@@ -344,16 +344,6 @@ button {
   letter-spacing: -0.02em;
 }
 
-.conversation-toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.conversation-toolbar-actions .button {
-  min-width: 112px;
-}
-
 .conversation-toolbar .eyebrow {
   margin-bottom: 2px;
 }
@@ -1027,6 +1017,16 @@ button {
 .message-body {
   color: var(--text);
   line-height: 1.75;
+}
+
+.message-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -2px;
+}
+
+.message-actions .button {
+  min-width: 0;
 }
 
 .table-wrap {

@@ -23,9 +23,11 @@ from core.auth_db import (
     User,
     append_chat_message,
     build_regenerate_seed_history,
+    build_regenerate_seed_history_for_message,
     build_seed_history,
     change_password,
     create_user,
+    get_chat_message_for_thread,
     get_user_role_names,
     init_local_db,
     log_audit,
@@ -44,6 +46,10 @@ templates = Jinja2Templates(directory="templates")
 
 class ChatPayload(BaseModel):
     question: str
+
+
+class RegeneratePayload(BaseModel):
+    assistant_message_id: int
 
 
 @dataclass
@@ -246,6 +252,7 @@ def _ndjson_line(payload: dict) -> str:
 
 def serialize_message(message) -> dict:
     return {
+        "id": message.id,
         "role": message.role,
         "content": message.content,
         "metadata": message.payload,
@@ -333,13 +340,14 @@ async def _run_chat_stream(
                     save_user = db_save.query(User).filter(User.id == user_id).first()
                     save_thread = db_save.query(ChatThread).filter(ChatThread.public_id == thread_public_id).first()
                     if save_thread:
-                        append_chat_message(
+                        saved_message = append_chat_message(
                             db_save,
                             save_thread,
                             "assistant",
                             final_payload["answer"],
                             metadata=final_payload["metadata"],
                         )
+                        final_payload["message_id"] = saved_message.id
                     log_audit(
                         db_save,
                         action="chat_query",
@@ -724,7 +732,7 @@ async def delete_thread(request: Request, public_id: str):
 
 
 @app.post("/api/chat/{public_id}/regenerate")
-async def regenerate_chat_api(request: Request, public_id: str):
+async def regenerate_chat_api(request: Request, public_id: str, payload: RegeneratePayload):
     db = next(get_db())
     try:
         user = current_user(request, db)
@@ -739,11 +747,17 @@ async def regenerate_chat_api(request: Request, public_id: str):
         if active_run and not active_run.cancel_event.is_set():
             return JSONResponse({"detail": "请先停止当前回复"}, status_code=status.HTTP_409_CONFLICT)
 
-        history_before_turn, last_user_message, last_assistant_message = build_regenerate_seed_history(db, thread)
-        if not last_user_message:
-            return JSONResponse({"detail": "没有可重新生成的用户问题"}, status_code=status.HTTP_400_BAD_REQUEST)
-        if not last_assistant_message:
-            return JSONResponse({"detail": "最后一轮回复尚未完成，无法重新生成"}, status_code=status.HTTP_409_CONFLICT)
+        target_message = get_chat_message_for_thread(db, thread, payload.assistant_message_id)
+        if not target_message or target_message.role != "assistant":
+            return JSONResponse({"detail": "未找到可重新生成的回复"}, status_code=status.HTTP_404_NOT_FOUND)
+
+        history_before_turn, last_user_message, last_assistant_message = build_regenerate_seed_history_for_message(
+            db,
+            thread,
+            payload.assistant_message_id,
+        )
+        if not last_user_message or not last_assistant_message:
+            return JSONResponse({"detail": "未找到可重新生成的问答对"}, status_code=status.HTTP_400_BAD_REQUEST)
 
         db.delete(last_assistant_message)
         thread.updated_at = utcnow()
