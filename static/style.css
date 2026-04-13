@@ -195,6 +195,11 @@ button {
   min-width: 0;
 }
 
+.thread-list {
+  align-content: start;
+  grid-auto-rows: min-content;
+}
+
 .nav-list {
   grid-template-columns: repeat(auto-fit, minmax(44px, 44px));
   justify-content: start;
@@ -337,6 +342,157 @@ button {
   font-size: 1.1rem;
   line-height: 1.2;
   letter-spacing: -0.02em;
+}
+
+.conversation-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.conversation-toolbar-actions .button {
+  min-width: 112px;
+}
+
+.conversation-toolbar .eyebrow {
+  margin-bottom: 2px;
+}
+
+.composer-panel {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 14px;
+  position: static;
+  min-width: 0;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.1);
+}
+
+.composer-panel .field-label {
+  margin-bottom: 2px;
+}
+
+.composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.composer-footer .button-primary {
+  min-width: 112px;
+}
+
+.message-starter .prompt-list {
+  margin-top: 6px;
+}
+
+.prompt-chip:hover {
+  background: rgba(59, 130, 246, 0.16);
+}
+
+.prompt-chip:focus-visible,
+.button:focus-visible,
+.thread-delete-button:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14);
+}
+
+.thread-delete-button:focus-visible {
+  border-color: rgba(59, 130, 246, 0.18);
+}
+
+.field textarea {
+  min-height: 84px;
+  resize: vertical;
+  line-height: 1.7;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
+}
+
+.conversation-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  min-width: 0;
+  overflow: auto;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(248, 250, 252, 0.4));
+}
+
+.message {
+  display: grid;
+  gap: 10px;
+  max-width: min(100%, 840px);
+  padding: 16px 18px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+}
+
+.message-user {
+  margin-left: auto;
+  max-width: min(72%, 720px);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.14), rgba(59, 130, 246, 0.05));
+  border-color: rgba(59, 130, 246, 0.14);
+}
+
+.empty-state {
+  min-height: 320px;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  justify-items: start;
+}
+
+.message-starter {
+  max-width: 680px;
+  border-style: dashed;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 249, 255, 0.88));
+}
+
+.result-table th {
+  background: #f3f7ff;
+  color: var(--muted-strong);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sql-box pre,
+.json-cell {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: var(--mono);
+  font-size: 0.84rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.thread-link-meta,
+.nav-link-meta,
+.empty-copy,
+.page-subtitle,
+.result-meta,
+.profile-meta {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.thread-link-title,
+.nav-link-label {
+  flex: 1;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
 }
 
 .button-danger {

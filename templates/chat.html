@@ -11,9 +11,9 @@
       <div class="eyebrow">Current conversation</div>
       <h2 class="conversation-title">{{ selected_thread.title }}</h2>
     </div>
-    <form action="/threads/{{ selected_thread.public_id }}/delete" method="post" data-confirm-delete>
-      <button class="button button-danger button-compact" id="delete-thread-button" type="submit">删除对话</button>
-    </form>
+    <div class="conversation-toolbar-actions">
+      <button class="button button-secondary button-compact" id="regenerate-button" type="button">重新生成</button>
+    </div>
   </section>
 
   <section class="panel conversation-panel" id="chat-messages">
@@ -94,7 +94,6 @@
       <textarea id="question-input" name="question" rows="3" placeholder="例如：查看 A1 产线昨天的平均良率（Enter 发送，Shift+Enter 换行）"></textarea>
     </label>
     <div class="composer-footer">
-      <button class="button button-secondary" id="regenerate-button" type="button">重新生成</button>
       <button class="button button-primary" id="send-button" type="submit">发送</button>
     </div>
   </form>

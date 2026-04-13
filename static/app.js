@@ -166,7 +166,6 @@ function initChat() {
   const input = document.getElementById("question-input");
   const button = document.getElementById("send-button");
   const regenerateButton = document.getElementById("regenerate-button");
-  const deleteThreadButton = document.getElementById("delete-thread-button");
   const messages = document.getElementById("chat-messages");
   const threadId = root.getAttribute("data-thread-id");
   const promptButtons = document.querySelectorAll("[data-prompt]");
@@ -174,48 +173,11 @@ function initChat() {
   let activeController = null;
   let runCompleted = true;
 
-  const setDeleteButtonDisabled = (disabled) => {
-    if (deleteThreadButton) {
-      deleteThreadButton.disabled = disabled;
-    }
-  };
-
-  const setSidebarDeleteButtonsDisabled = (disabled) => {
+  const setDeleteActionsDisabled = (disabled) => {
     document.querySelectorAll(".thread-delete-button").forEach((el) => {
       el.disabled = disabled;
     });
   };
-
-  const setDeleteActionsDisabled = (disabled) => {
-    setDeleteButtonDisabled(disabled);
-    setSidebarDeleteButtonsDisabled(disabled);
-  };
-
-  let activeDeleteLock = false;
-
-  const enableDeleteActionsIfIdle = () => {
-    if (!activeDeleteLock) {
-      setDeleteActionsDisabled(false);
-    }
-  };
-
-  const lockDeleteActions = () => {
-    activeDeleteLock = true;
-    setDeleteActionsDisabled(true);
-  };
-
-  const unlockDeleteActions = () => {
-    activeDeleteLock = false;
-    setDeleteActionsDisabled(false);
-  };
-
-  document.querySelectorAll("[data-confirm-delete]").forEach((deleteForm) => {
-    deleteForm.addEventListener("submit", () => {
-      lockDeleteActions();
-    });
-  });
-
-  enableDeleteActionsIfIdle();
 
   const removeEmptyState = () => {
     const emptyState = messages.querySelector(".empty-state");
@@ -233,15 +195,19 @@ function initChat() {
     activeController = null;
     button.disabled = false;
     button.textContent = "发送";
-    regenerateButton.disabled = false;
-    enableDeleteActionsIfIdle();
+    if (regenerateButton) {
+      regenerateButton.disabled = false;
+    }
+    setDeleteActionsDisabled(false);
     input.focus();
   };
 
   const setBusyState = () => {
     button.disabled = false;
     button.textContent = "停止";
-    regenerateButton.disabled = true;
+    if (regenerateButton) {
+      regenerateButton.disabled = true;
+    }
     setDeleteActionsDisabled(true);
   };
 
@@ -390,12 +356,14 @@ function initChat() {
     }
   });
 
-  regenerateButton.addEventListener("click", async () => {
-    if (activeController) {
-      return;
-    }
-    await startRun({ url: `/api/chat/${threadId}/regenerate`, question: null, appendUser: false });
-  });
+  if (regenerateButton) {
+    regenerateButton.addEventListener("click", async () => {
+      if (activeController) {
+        return;
+      }
+      await startRun({ url: `/api/chat/${threadId}/regenerate`, question: null, appendUser: false });
+    });
+  }
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -412,6 +380,8 @@ function initChat() {
     syncHeight();
     await startRun({ url: `/api/chat/${threadId}`, question, appendUser: true });
   });
+
+  setIdleState();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
