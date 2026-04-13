@@ -269,8 +269,7 @@ button {
 }
 
 .thread-item:hover .thread-delete-button,
-.thread-item:focus-within .thread-delete-button,
-.thread-item.active .thread-delete-button {
+.thread-item:focus-within .thread-delete-button {
   opacity: 1;
   transform: translateY(0);
 }
