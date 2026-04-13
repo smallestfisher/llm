@@ -1,51 +1,152 @@
 # Architecture Rewrite
 
-This branch contains the in-progress rewrite of the BOE Data Copilot application.
+This branch now runs around a split application shape instead of the old monolith web shell.
+
+## Current runtime shape
+
+- **Backend**: FastAPI API service at `backend/app/main.py`
+- **Frontend**: SPA at `frontend/src/main.tsx`
+- **Shared business layer**: the rewrite still bridges into `core/` for router, workflow, runtime, and schema logic
+
+The old root-level template/static web shell is no longer the active application architecture on this branch.
 
 ## Why rewrite
-The legacy app successfully accumulated product capabilities, but execution lifecycle, message state, UI state, and thread history became too tightly coupled. This rewrite aims to separate concerns instead of layering more patch fixes onto the legacy stack.
+
+The legacy app accumulated product capabilities, but execution lifecycle, message state, UI state, and thread history became too tightly coupled. This rewrite separates those concerns so that:
+
+- backend execution can model runs explicitly
+- frontend state can reflect real run progress
+- messages become outputs of runs rather than the run itself
+- admin/audit capabilities stay part of the product instead of being bolted on
 
 ## Target architecture
-- **Backend**: FastAPI API service
-- **Frontend**: SPA
-- **Shared domain model**:
-  - `Thread`
-  - `Turn`
-  - `Run`
-  - `Message`
-  - `AuditLog`
+
+### Backend domain model
+The rewrite backend treats these as first-class persisted objects:
+
+- `Thread`
+- `Turn`
+- `Run`
+- `Message`
+- `AuditLog`
+
+### Frontend model
+The SPA consumes backend thread detail and derives UI state from:
+
+- active thread
+- active run
+- run steps
+- latest assistant messages
+- admin/profile state
 
 ## Design principles
+
 1. `Run` is a first-class object.
    - stop = cancel run
-   - regenerate = create a new run for a turn
-   - progress = active run state
+   - regenerate = create a new run for an existing turn
+   - progress = queryable run state
 2. Assistant messages are outputs of runs, not the run itself.
 3. Threads, turns, runs, and messages should be independently queryable.
 4. Admin and audit capabilities remain part of the product, not bolt-ons.
 5. `core/config/tables.json` remains the schema registry source of truth.
+6. The rewrite may reuse `core/` business logic, but should not keep the old web shell alive just for compatibility.
 
-## Current migration approach
-- Build the new backend and frontend in parallel.
-- Preserve business semantics from the existing router/workflow/SQL safety stack.
-- Initially bridge to existing core workflow modules where needed.
-- Gradually replace bridge-style execution with native rewrite lifecycle handling.
+## Current architecture map
+
+### Backend
+- `backend/app/main.py`
+  - FastAPI entrypoint
+- `backend/app/api/routes.py`
+  - auth, thread, run, admin, audit routes
+- `backend/app/services/*`
+  - run lifecycle, thread queries, auth/admin orchestration
+- `backend/app/models/*`
+  - rewrite persistence model
+- `backend/app/workflow/*`
+  - bridge modules into existing router/workflow/runtime logic
+
+### Frontend
+- `frontend/src/main.tsx`
+  - SPA mount point
+- `frontend/src/App.tsx`
+  - top-level app container
+- `frontend/src/api.ts`
+  - backend API client helpers
+- `frontend/src/components.tsx`
+  - thread/run/admin/profile/message UI components
+- `frontend/src/view-models.ts`
+  - derived run/message state
+
+### Reused business layer
+The rewrite still intentionally depends on:
+
+- `core/router/*`
+- `core/workflow/orchestrator.py`
+- `core/runtime/*`
+- `core/config/tables.json`
+
+This means `core/` is not deprecated wholesale; only the old web-entry shell is.
 
 ## Current rewrite status
-Implemented or in progress:
-- separated backend/frontend structure
-- auth and session flows
-- thread / turn / run / message models
-- admin and audit APIs
-- basic SPA workspace
-- run-aware UI panels
-- workflow bridge into existing execution logic
+
+Implemented:
+
+- split backend/frontend structure
+- rewrite backend entrypoint and API routes
+- persisted `Thread / Turn / Run / Message / AuditLog` model
+- auth, admin, audit APIs
+- run lifecycle with `pending / running / cancelling / completed / failed / cancelled`
+- send / regenerate / cancel APIs aligned to run objects
+- SPA login/register/chat/profile/admin/audit pages
+- polling-based run progress UI
+- SQL details and result-table rendering in the SPA
+- removal of the legacy template/static shell from the active architecture
 
 Still evolving:
-- deeper native run lifecycle
-- less bridge dependence on legacy execution modules
+
+- less bridge dependence on legacy `core` execution internals
 - thinner frontend container layer
-- more complete streaming/progress behavior
+- deeper backend-native execution behavior beyond bridge mode
+- richer progress behavior beyond polling
+
+## Execution lifecycle
+
+Current request flow is:
+
+1. frontend sends a question to the rewrite API
+2. backend creates `Turn` + `Run`
+3. background execution advances the run through route/workflow/answer stages
+4. frontend polls thread detail while a run is active
+5. final assistant message is written only when the run completes successfully
+6. cancel/regenerate operate on runs rather than on the page shell
+
+## Development topology
+
+### Run backend
+```bash
+uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### Run frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The Vite frontend proxies `/api` to the backend on port `8000`.
+
+## Verification expectations
+
+A rewrite change should verify at least:
+
+- backend import/startup works
+- `/api/health` responds
+- frontend builds successfully
+- send / regenerate / cancel flows reach terminal run states
+- admin data still works, including `last_login_at`
 
 ## Key preserved asset
+
 - `core/config/tables.json`
+  - remains the schema registry source of truth
