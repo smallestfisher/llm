@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+sqlalchemy
+python-dotenv
+bcrypt
+itsdangerous
+pydantic
+openai
+pymysql
+pandas
+jinja2
+python-multipart
