@@ -983,6 +983,88 @@ button {
   color: var(--muted-strong);
 }
 
+.thinking-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.thinking-summary {
+  color: var(--muted-strong);
+  font-weight: 600;
+}
+
+.thinking-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.thinking-step {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.thinking-step-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.thinking-step-content {
+  display: grid;
+  gap: 4px;
+}
+
+.thinking-step-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.thinking-step-detail {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.thinking-step-completed {
+  border-color: rgba(22, 163, 74, 0.14);
+  background: rgba(22, 163, 74, 0.06);
+}
+
+.thinking-step-completed .thinking-step-marker {
+  color: var(--success);
+}
+
+.thinking-step-active {
+  border-color: rgba(59, 130, 246, 0.2);
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: 0 10px 22px rgba(59, 130, 246, 0.08);
+}
+
+.thinking-step-active .thinking-step-marker {
+  color: var(--primary-strong);
+}
+
+.thinking-step-pending {
+  opacity: 0.72;
+}
+
+.thinking-step-pending .thinking-step-marker {
+  color: var(--muted);
+}
+
 .message-head {
   display: flex;
   justify-content: space-between;

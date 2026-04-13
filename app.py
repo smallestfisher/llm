@@ -292,7 +292,7 @@ async def _run_chat_stream(
                     status_text = _thinking_status_for_node(node_name)
                     if status_text:
                         yield _ndjson_line({"type": "status", "node": node_name, "message": status_text, "thread_id": thread_public_id})
-                    if node_name == "generate_answer":
+                    if node_name == "generate_answer" and node_output and node_output.get("final_answer"):
                         final_answer = node_output.get("final_answer", "")
                         metadata = {
                             "columns": state_snapshot.get("table_columns") or [],

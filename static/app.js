@@ -90,33 +90,126 @@ function appendMessage(container, role, content, metadata = {}, messageId = "") 
   return article;
 }
 
+const THINKING_STEPS = [
+  { key: "route", label: "识别问题" },
+  { key: "guard", label: "安全检查" },
+  { key: "filters", label: "整理条件" },
+  { key: "schema", label: "装载结构" },
+  { key: "sql", label: "编写 SQL" },
+  { key: "execute", label: "执行查询" },
+  { key: "reflect", label: "修正 SQL" },
+  { key: "answer", label: "生成回答" },
+];
+
+const NODE_TO_STEP = {
+  route_intent: "route",
+  skill_dispatch: "route",
+  check_guard: "guard",
+  refine_filters: "filters",
+  get_schema: "schema",
+  write_sql: "sql",
+  execute_sql: "execute",
+  reflect_sql: "reflect",
+  generate_answer: "answer",
+};
+
+function renderThinkingSteps(currentStep, currentMessage = "正在启动工作流...") {
+  const currentIndex = THINKING_STEPS.findIndex((step) => step.key === currentStep);
+  const items = THINKING_STEPS.map((step, index) => {
+    let state = "pending";
+    let marker = "○";
+    if (currentIndex >= 0 && index < currentIndex) {
+      state = "completed";
+      marker = "✓";
+    } else if (step.key === currentStep) {
+      state = "active";
+      marker = "●";
+    }
+    return `
+      <li class="thinking-step thinking-step-${state}">
+        <span class="thinking-step-marker">${marker}</span>
+        <div class="thinking-step-content">
+          <div class="thinking-step-title">${step.label}</div>
+          ${step.key === currentStep ? `<div class="thinking-step-detail">${escapeHtml(currentMessage)}</div>` : ""}
+        </div>
+      </li>
+    `;
+  }).join("");
+
+  return `
+    <div class="thinking-panel">
+      <div class="thinking-summary">${escapeHtml(currentMessage)}</div>
+      <ol class="thinking-steps">${items}</ol>
+    </div>
+  `;
+}
+
 function appendThinkingMessage(container) {
   const article = document.createElement("article");
   article.className = "message message-assistant message-thinking";
+  article.dataset.currentStep = "";
   article.innerHTML = `
     <div class="message-head">
       <div class="message-identity">
         <span class="message-avatar">AI</span>
         <span>BOE Data Copilot</span>
       </div>
-      <span>思考中</span>
+      <span>处理中</span>
     </div>
-    <div class="message-body thinking-status">正在启动工作流...</div>
+    <div class="message-body thinking-status">${renderThinkingSteps("", "正在启动工作流...")}</div>
   `;
   container.appendChild(article);
   container.scrollTop = container.scrollHeight;
   return article;
 }
 
-function updateThinkingMessage(article, message) {
+function updateThinkingMessage(article, nodeName, message) {
   if (!article) {
     return;
   }
   const body = article.querySelector(".thinking-status");
-  if (body) {
-    body.textContent = message;
+  if (!body) {
+    return;
   }
+  const stepKey = NODE_TO_STEP[nodeName] || article.dataset.currentStep || "";
+  article.dataset.currentStep = stepKey;
+  body.innerHTML = renderThinkingSteps(stepKey, message);
   article.scrollIntoView({ block: "end" });
+}
+
+function completeThinkingMessage(article, message = "已完成") {
+  if (!article) {
+    return;
+  }
+  const body = article.querySelector(".thinking-status");
+  if (!body) {
+    return;
+  }
+  body.innerHTML = renderThinkingSteps("answer", message);
+}
+
+function cancelThinkingMessage(article, message = "已停止本次回复。") {
+  if (!article) {
+    return;
+  }
+  const body = article.querySelector(".thinking-status");
+  if (!body) {
+    return;
+  }
+  const stepKey = article.dataset.currentStep || "";
+  body.innerHTML = renderThinkingSteps(stepKey, message);
+}
+
+function failThinkingMessage(article, message) {
+  if (!article) {
+    return;
+  }
+  const body = article.querySelector(".thinking-status");
+  if (!body) {
+    return;
+  }
+  const stepKey = article.dataset.currentStep || "";
+  body.innerHTML = renderThinkingSteps(stepKey, message);
 }
 
 function removeThinkingMessage(article) {
@@ -240,13 +333,14 @@ function initChat() {
       if (payload.thread_id && payload.thread_id !== threadId) {
         return;
       }
-      updateThinkingMessage(thinkingMessage, payload.message || "正在处理中...");
+      updateThinkingMessage(thinkingMessage, payload.node || "", payload.message || "正在处理中...");
     },
     onFinal(payload) {
       if (payload.thread_id !== threadId) {
         return;
       }
       runCompleted = true;
+      completeThinkingMessage(thinkingMessage, "已完成，正在展示结果");
       removeThinkingMessage(thinkingMessage);
       appendMessage(messages, "assistant", payload.answer, payload.metadata, payload.message_id || "");
       if (payload.thread_title) {
@@ -258,6 +352,7 @@ function initChat() {
         return;
       }
       runCompleted = true;
+      failThinkingMessage(thinkingMessage, payload.detail || "处理出错");
       removeThinkingMessage(thinkingMessage);
       appendMessage(messages, "assistant", payload.detail || "处理出错");
     },
@@ -266,6 +361,7 @@ function initChat() {
         return;
       }
       runCompleted = true;
+      cancelThinkingMessage(thinkingMessage, "已停止本次回复。");
       removeThinkingMessage(thinkingMessage);
       appendMessage(messages, "assistant", "已停止本次回复。");
     },
