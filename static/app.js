@@ -435,9 +435,7 @@ function initChat() {
     } catch (error) {
       removeThinkingMessage(thinkingMessage);
       if (error.name === "AbortError") {
-        if (!runCompleted) {
-          appendMessage(messages, "assistant", "已停止本次回复。");
-        }
+        // wait for backend cancelled event; do not append a duplicate local message
       } else {
         appendMessage(messages, "assistant", `处理出错：${error.message}`);
       }

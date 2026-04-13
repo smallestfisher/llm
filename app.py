@@ -312,7 +312,7 @@ async def _run_chat_stream(
                 if cancelled:
                     break
 
-            if cancelled:
+            if cancelled or _is_run_cancelled(thread_public_id, active_run.run_id):
                 db_cancel = SessionLocal()
                 try:
                     cancel_user = db_cancel.query(User).filter(User.id == user_id).first()
@@ -334,12 +334,12 @@ async def _run_chat_stream(
                 yield _ndjson_line({"type": "cancelled", "thread_id": thread_public_id})
                 return
 
-            if final_payload:
+            if final_payload and not _is_run_cancelled(thread_public_id, active_run.run_id):
                 db_save = SessionLocal()
                 try:
                     save_user = db_save.query(User).filter(User.id == user_id).first()
                     save_thread = db_save.query(ChatThread).filter(ChatThread.public_id == thread_public_id).first()
-                    if save_thread:
+                    if save_thread and not _is_run_cancelled(thread_public_id, active_run.run_id):
                         saved_message = append_chat_message(
                             db_save,
                             save_thread,
@@ -348,15 +348,16 @@ async def _run_chat_stream(
                             metadata=final_payload["metadata"],
                         )
                         final_payload["message_id"] = saved_message.id
-                    log_audit(
-                        db_save,
-                        action="chat_query",
-                        actor=save_user,
-                        target_type="thread",
-                        target_id=thread_public_id,
-                        ip_address=ip_address,
-                        details={"question": question[:120]},
-                    )
+                    if not _is_run_cancelled(thread_public_id, active_run.run_id):
+                        log_audit(
+                            db_save,
+                            action="chat_query",
+                            actor=save_user,
+                            target_type="thread",
+                            target_id=thread_public_id,
+                            ip_address=ip_address,
+                            details={"question": question[:120]},
+                        )
                     db_save.commit()
                 except Exception:
                     db_save.rollback()
@@ -364,6 +365,9 @@ async def _run_chat_stream(
                 finally:
                     db_save.close()
         except Exception as exc:
+            if _is_run_cancelled(thread_public_id, active_run.run_id):
+                yield _ndjson_line({"type": "cancelled", "thread_id": thread_public_id})
+                return
             error_message = f"处理出错：{exc}"
             db_error = SessionLocal()
             try:
