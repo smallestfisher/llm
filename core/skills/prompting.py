@@ -123,3 +123,50 @@ def build_answer_prompt(
 数据库返回预览：{{db_result}}
 统计分析结果：{{data_summary}}
 """
+
+
+def build_route_decision_prompt(
+    *,
+    question: str,
+    shared_filters: dict,
+    explicit_hits: list[str],
+    scored_domains: list[tuple[str, float]],
+) -> str:
+    return f"""你是企业制造数据 Copilot 的路由决策器。
+请判断用户问题应该进入哪个业务域。
+
+允许的 route 只有：
+- production
+- planning
+- inventory
+- demand
+- sales
+- cross_domain
+- legacy
+
+规则：
+1. 仅输出 JSON，不要输出解释文字。
+2. 只有在问题确实同时涉及多个业务域、且需要联合回答时，才输出 cross_domain。
+3. 如果问题与企业数据查询无关，或无法判断，输出 legacy。
+4. 不要臆造表名，不要输出允许范围之外的 route。
+
+用户问题：
+{question}
+
+已提取的共享过滤条件：
+{json.dumps(shared_filters or {}, ensure_ascii=False, indent=2)}
+
+显式表命中：
+{json.dumps(explicit_hits or [], ensure_ascii=False)}
+
+规则层打分摘要：
+{json.dumps(scored_domains, ensure_ascii=False)}
+
+请输出如下 JSON：
+{{
+  "route": "inventory",
+  "confidence": 0.82,
+  "matched_domains": ["inventory"],
+  "reason": "..."
+}}
+"""

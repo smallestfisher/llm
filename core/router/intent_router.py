@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
+
 from core.router.filter_extractor import extract_shared_filters
 from core.registry.tables import explicit_table_hits, get_tables_for_domain
+from core.runtime.skill_runtime import llm_complete
 from core.runtime.state import RouteDecision
+from core.skills.prompting import build_route_decision_prompt
 
 
 _DOMAIN_KEYWORDS = {
@@ -85,6 +89,7 @@ _DOMAIN_KEYWORDS = {
 
 _CONNECTOR_KEYWORDS = ("对比", "对照", "联查", "关联", "联合", "同时", "一起", "匹配", "结合", "跨域", "支撑", "覆盖", "影响")
 _ROUTE_THRESHOLD = 2.5
+_ALLOWED_ROUTES = {"production", "planning", "inventory", "demand", "sales", "cross_domain", "legacy"}
 
 
 def _domain_score(question: str, domain: str) -> tuple[float, list[str]]:
@@ -132,10 +137,94 @@ def _suggest_tables(domain: str, question: str) -> list[str]:
     return []
 
 
-def route_question(question: str) -> RouteDecision:
+def _build_tables_for_route(route: str, matched_domains: list[str], explicit_hits: list[str], scored: list[tuple[str, float, list[str]]], question: str) -> list[str]:
+    tables: list[str] = []
+    if route == "cross_domain":
+        for domain in matched_domains[:2]:
+            for table_name in explicit_hits + _suggest_tables(domain, question):
+                if table_name not in tables:
+                    tables.append(table_name)
+        return tables
+
+    for domain, _, domain_hits in scored:
+        if domain != route:
+            continue
+        for table_name in explicit_hits + domain_hits:
+            if table_name not in tables:
+                tables.append(table_name)
+        break
+    if not tables and route in {"production", "planning", "inventory", "demand", "sales"}:
+        tables = _suggest_tables(route, question)
+    return tables
+
+
+def _should_use_llm_router(rule_decision: RouteDecision, scored: list[tuple[str, float, list[str]]], question: str) -> bool:
+    if rule_decision.route == "legacy" and any(token in question for token in ("查询", "统计", "分析", "对比", "看下", "查看", "多少", "趋势", "风险")):
+        return True
+    if len(scored) < 2:
+        return False
+    top_score = scored[0][1]
+    second_score = scored[1][1]
+    if top_score < _ROUTE_THRESHOLD + 0.8:
+        return True
+    if top_score > 0 and second_score >= top_score * 0.8:
+        return True
+    return False
+
+
+def _llm_route_question(question: str, shared_filters: dict, explicit_hits: list[str], scored: list[tuple[str, float, list[str]]]) -> RouteDecision | None:
+    prompt = build_route_decision_prompt(
+        question=question,
+        shared_filters=shared_filters,
+        explicit_hits=explicit_hits,
+        scored_domains=[(domain, score) for domain, score, _ in scored],
+    )
+    raw = llm_complete(prompt)
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return None
+
+    route = (payload.get("route") or "").strip()
+    if route not in _ALLOWED_ROUTES:
+        return None
+
+    confidence = payload.get("confidence", 0.0)
+    try:
+        confidence = float(confidence)
+    except Exception:
+        confidence = 0.0
+    confidence = max(0.0, min(0.95, confidence))
+
+    matched_domains = payload.get("matched_domains") or []
+    if not isinstance(matched_domains, list):
+        matched_domains = []
+    matched_domains = [str(domain) for domain in matched_domains if str(domain) in {"production", "planning", "inventory", "demand", "sales"}]
+
+    if route == "cross_domain" and len(matched_domains) < 2:
+        return None
+    if route in {"production", "planning", "inventory", "demand", "sales"} and route not in matched_domains:
+        matched_domains = [route]
+    if route == "legacy":
+        matched_domains = []
+
+    reason = (payload.get("reason") or "").strip() or f"llm fallback selected {route}"
+    tables = _build_tables_for_route(route, matched_domains, explicit_hits, scored, question)
+
+    return RouteDecision(
+        route=route,
+        confidence=confidence,
+        matched_domains=matched_domains,
+        target_tables=tables,
+        filters=shared_filters,
+        reason=reason,
+    )
+
+
+def route_question_by_rules(question: str) -> tuple[RouteDecision, list[tuple[str, float, list[str]]], list[str], dict]:
     q = (question or "").strip()
     if not q:
-        return RouteDecision(route="legacy", reason="empty question")
+        return RouteDecision(route="legacy", reason="empty question"), [], [], {}
     shared_filters = extract_shared_filters(q)
 
     explicit_hits = explicit_table_hits(q)
@@ -175,7 +264,7 @@ def route_question(question: str) -> RouteDecision:
             target_tables=combined_tables,
             filters=shared_filters,
             reason=f"question spans {', '.join(matched_domains)}",
-        )
+        ), scored, explicit_hits, shared_filters
 
     if top_score >= _ROUTE_THRESHOLD:
         tables: list[str] = []
@@ -191,7 +280,7 @@ def route_question(question: str) -> RouteDecision:
             target_tables=tables,
             filters=shared_filters,
             reason=f"matched {top_domain} keywords",
-        )
+        ), scored, explicit_hits, shared_filters
 
     return RouteDecision(
         route="legacy",
@@ -200,4 +289,20 @@ def route_question(question: str) -> RouteDecision:
         target_tables=explicit_hits,
         filters=shared_filters,
         reason="router confidence too low",
-    )
+    ), scored, explicit_hits, shared_filters
+
+
+def route_question(question: str) -> RouteDecision:
+    rule_decision, scored, explicit_hits, shared_filters = route_question_by_rules(question)
+    if not scored:
+        return rule_decision
+    if not _should_use_llm_router(rule_decision, scored, question):
+        return rule_decision
+    llm_decision = _llm_route_question(question, shared_filters, explicit_hits, scored)
+    if llm_decision is None:
+        return rule_decision
+    llm_decision.reason = llm_decision.reason or f"llm fallback selected {llm_decision.route}"
+    return llm_decision
+
+
+__all__ = ["route_question", "route_question_by_rules"]

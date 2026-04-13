@@ -1,9 +1,12 @@
 import unittest
+from unittest.mock import patch
 
-from core.router.intent_router import route_question
+from core.router.intent_router import route_question, route_question_by_rules
 
 
 class IntentRouterTestCase(unittest.TestCase):
+
+
     def test_inventory_route(self):
         decision = route_question("查询最近7天库存和在途情况")
         self.assertEqual(decision.route, "inventory")
@@ -56,6 +59,31 @@ class IntentRouterTestCase(unittest.TestCase):
     def test_legacy_route_for_low_confidence_question(self):
         decision = route_question("你好")
         self.assertEqual(decision.route, "legacy")
+
+    def test_rule_router_keeps_high_confidence_match_without_llm(self):
+        decision, _, _, _ = route_question_by_rules("查询最近7天库存和在途情况")
+        self.assertEqual(decision.route, "inventory")
+
+    @patch("core.router.intent_router.llm_complete")
+    def test_llm_fallback_can_upgrade_legacy_route(self, mock_llm_complete):
+        mock_llm_complete.return_value = '{"route": "inventory", "confidence": 0.82, "matched_domains": ["inventory"], "reason": "llm fallback selected inventory"}'
+        decision = route_question("帮我看看最近缺货风险")
+        self.assertEqual(decision.route, "inventory")
+        self.assertIn("inventory", decision.matched_domains)
+
+    @patch("core.router.intent_router.llm_complete")
+    def test_llm_fallback_invalid_json_falls_back_to_rules(self, mock_llm_complete):
+        mock_llm_complete.return_value = 'not-json'
+        decision = route_question("帮我看看最近缺货风险")
+        self.assertEqual(decision.route, "legacy")
+
+    @patch("core.router.intent_router.llm_complete")
+    def test_llm_fallback_can_select_cross_domain(self, mock_llm_complete):
+        mock_llm_complete.return_value = '{"route": "cross_domain", "confidence": 0.88, "matched_domains": ["inventory", "planning"], "reason": "llm fallback selected cross_domain"}'
+        decision = route_question("看一下下周会不会缺料以及排产是否支撑")
+        self.assertEqual(decision.route, "cross_domain")
+        self.assertIn("inventory", decision.matched_domains)
+        self.assertIn("planning", decision.matched_domains)
 
 
 if __name__ == "__main__":
