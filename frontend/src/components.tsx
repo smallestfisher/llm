@@ -197,25 +197,13 @@ export function AdminUsersPanel({ adminUsers, busy, drafts, onDraftChange, onTog
               </div>
               <span className={`status-pill ${user.is_active ? 'active' : ''}`}>{user.is_active ? 'Active' : 'Banned'}</span>
             </div>
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
-              <button 
-                className="btn-ghost" 
-                style={{ flex: 1, padding: '0.6rem', fontSize: '0.75rem' }} 
-                onClick={() => onToggleUser(user)}
-              >
-                {user.is_active ? '禁用账号' : '激活账号'}
-              </button>
-              <button 
-                className="btn-ghost" 
-                style={{ flex: 1, padding: '0.6rem', fontSize: '0.75rem' }} 
-                onClick={() => onToggleAdmin(user)}
-              >
-                {user.roles.includes('admin') ? '取消管理' : '提升管理'}
-              </button>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
+              <button className="btn-ghost" style={{ flex: 1 }} onClick={() => onToggleUser(user)}>{user.is_active ? '禁用账号' : '激活账号'}</button>
+              <button className="btn-ghost" style={{ flex: 1 }} onClick={() => onToggleAdmin(user)}>{user.roles.includes('admin') ? '取消管理' : '提升管理'}</button>
             </div>
-            <div style={{ display: 'flex', gap: '8px', background: 'rgba(0,0,0,0.03)', padding: '4px', borderRadius: '12px' }}>
-              <input style={{ flex: 1, padding: '0.6rem', fontSize: '0.85rem', border: 'none', background: 'transparent' }} value={drafts[user.id] || ''} onChange={(e) => onDraftChange(user.id, e.target.value)} placeholder="新密码" />
-              <button className="btn-send" style={{ borderRadius: '10px', padding: '0 1rem' }} onClick={() => onResetPassword(user)}>确认</button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input style={{ flex: 1, padding: '0.6rem', fontSize: '0.85rem' }} value={drafts[user.id] || ''} onChange={(e) => onDraftChange(user.id, e.target.value)} placeholder="新密码" />
+              <button className="btn-primary" style={{ padding: '0.5rem 1rem' }} onClick={() => onResetPassword(user)}>确认</button>
             </div>
           </div>
         ))}
