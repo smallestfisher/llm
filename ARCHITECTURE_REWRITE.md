@@ -1,28 +1,29 @@
-# Architecture Rewrite
+# 架构重构说明
 
-This branch now runs around a split application shape instead of the old monolith web shell.
+当前分支已经从旧的单体 Web 壳层切换为前后端分离架构。
 
-## Current runtime shape
+## 当前运行形态
 
-- **Backend**: FastAPI API service at `backend/app/main.py`
-- **Frontend**: SPA at `frontend/src/main.tsx`
-- **Business layer**: backend-native workflow, skills, semantic, execution, and config modules under `backend/app`
+- **后端**：`backend/app/main.py` 提供的 FastAPI API 服务
+- **前端**：`frontend/src/main.tsx` 启动的 SPA
+- **业务层**：`backend/app` 下的 `workflow`、`skills`、`semantic`、`execution`、`config` 模块
 
-The old root-level template/static web shell is no longer the active application architecture on this branch.
+根目录旧的 `templates/`、`static/` 页面壳层已经不再是当前分支的主运行架构。
 
-## Why rewrite
+## 为什么要重构
 
-The legacy app accumulated product capabilities, but execution lifecycle, message state, UI state, and thread history became too tightly coupled. This rewrite separates those concerns so that:
+旧版应用虽然积累了不少产品能力，但执行生命周期、消息状态、界面状态和线程历史之间耦合过重。重构的目标是把这些职责拆开，使得：
 
-- backend execution can model runs explicitly
-- frontend state can reflect real run progress
-- messages become outputs of runs rather than the run itself
-- admin/audit capabilities stay part of the product instead of being bolted on
+- 后端可以显式建模 `Run`
+- 前端可以展示真实的运行进度
+- assistant 消息成为运行结果，而不是运行本身
+- 管理与审计能力继续作为正式产品能力保留
 
-## Target architecture
+## 目标架构
 
-### Backend domain model
-The rewrite backend treats these as first-class persisted objects:
+### 后端领域模型
+
+当前重构版后端把以下对象视为一等持久化对象：
 
 - `Thread`
 - `Turn`
@@ -30,120 +31,125 @@ The rewrite backend treats these as first-class persisted objects:
 - `Message`
 - `AuditLog`
 
-### Frontend model
-The SPA consumes backend thread detail and derives UI state from:
+### 前端状态模型
 
-- active thread
-- active run
-- run steps
-- latest assistant messages
-- admin/profile state
+SPA 通过后端返回的线程详情派生界面状态，核心包括：
 
-## Design principles
+- 当前线程
+- 当前活动运行
+- 运行步骤
+- 最新 assistant 消息
+- 管理页 / 个人页状态
 
-1. `Run` is a first-class object.
-   - stop = cancel run
-   - regenerate = create a new run for an existing turn
-   - progress = queryable run state
-2. Assistant messages are outputs of runs, not the run itself.
-3. Threads, turns, runs, and messages should be independently queryable.
-4. Admin and audit capabilities remain part of the product, not bolt-ons.
-5. `backend/app/config/tables.json` is the schema registry source of truth.
-6. The active backend should not depend on a parallel legacy business tree.
+## 设计原则
 
-## Current architecture map
+1. `Run` 是一等对象。
+   - stop = 取消运行
+   - regenerate = 基于既有 turn 新建运行
+   - progress = 可查询的运行状态
+2. assistant 消息是运行产物，而不是运行本身。
+3. `Thread`、`Turn`、`Run`、`Message` 应当可以被独立查询。
+4. 管理与审计能力仍然属于产品本体，不作为外挂功能存在。
+5. `backend/app/config/tables.json` 是表结构的唯一事实来源。
+6. 当前后端不再依赖平行存在的旧 `core` 业务树。
 
-### Backend
+## 当前架构地图
+
+### 后端
+
 - `backend/app/main.py`
-  - FastAPI entrypoint
+  - FastAPI 入口
 - `backend/app/api/routes.py`
-  - auth, thread, run, admin, audit routes
+  - 认证、线程、运行、管理员、审计接口
 - `backend/app/services/*`
-  - run lifecycle, thread queries, auth/admin orchestration
+  - 运行生命周期、线程查询、认证与管理员编排
 - `backend/app/models/*`
-  - rewrite persistence model
+  - 重构版持久化模型
 - `backend/app/workflow/*`
-  - orchestration, routing, history shaping
+  - 编排、路由、历史整理
 - `backend/app/semantic/*`
-  - filter extraction, heuristics, domain mapping
+  - 过滤器提取、启发式、领域映射
 - `backend/app/execution/*`
-  - LLM, SQL hardening/lint, SQL execution
+  - LLM、SQL 硬化 / lint、SQL 执行
 - `backend/app/config/*`
-  - schema and routing config
+  - 表结构与路由配置
 
-### Frontend
+### 前端
+
 - `frontend/src/main.tsx`
-  - SPA mount point
+  - SPA 挂载入口
 - `frontend/src/App.tsx`
-  - top-level app container
+  - 顶层应用容器
 - `frontend/src/api.ts`
-  - backend API client helpers
+  - 后端 API 调用封装
 - `frontend/src/components.tsx`
-  - thread/run/admin/profile/message UI components
+  - 线程 / 运行 / 管理 / 个人页 / 消息界面组件
 - `frontend/src/view-models.ts`
-  - derived run/message state
+  - 运行与消息的派生状态
 
-## Current rewrite status
+## 当前重构进度
 
-Implemented:
+已完成：
 
-- split backend/frontend structure
-- rewrite backend entrypoint and API routes
-- persisted `Thread / Turn / Run / Message / AuditLog` model
-- auth, admin, audit APIs
-- run lifecycle with `pending / running / cancelling / completed / failed / cancelled`
-- send / regenerate / cancel APIs aligned to run objects
-- SPA login/register/chat/profile/admin/audit pages
-- polling-based run progress UI
-- SQL details and result-table rendering in the SPA
-- backend-native workflow/semantic/execution/config stack
-- removal of the legacy template/static shell from the active architecture
-- removal of the legacy business tree from active runtime ownership
+- 前后端分离结构落地
+- 重构版后端入口与 API 路由
+- `Thread / Turn / Run / Message / AuditLog` 持久化模型
+- 认证、管理员、审计 API
+- `pending / running / cancelling / completed / failed / cancelled` 运行生命周期
+- 与 `Run` 对齐的发送 / 重新生成 / 取消 API
+- SPA 登录、注册、聊天、个人页、管理员页、审计页
+- 基于轮询的运行进度展示
+- SPA 中的 SQL 详情与结果表格展示
+- 后端原生的 `workflow / semantic / execution / config` 技术栈
+- 旧模板 / 静态页面壳层退出主架构
+- 旧 `core` 业务树退出主运行链路
 
-Still evolving:
+仍在演进：
 
-- thinner frontend container layer
-- richer progress behavior beyond polling
-- more focused prompt/routing tuning against production data
+- 继续瘦身前端顶层容器
+- 除轮询外更丰富的进度反馈机制
+- 结合真实生产数据进一步优化 prompt 与路由
 
-## Execution lifecycle
+## 执行生命周期
 
-Current request flow is:
+当前请求链路如下：
 
-1. frontend sends a question to the rewrite API
-2. backend creates `Turn` + `Run`
-3. background execution advances the run through route/workflow/answer stages
-4. frontend polls thread detail while a run is active
-5. final assistant message is written only when the run completes successfully
-6. cancel/regenerate operate on runs rather than on the page shell
+1. 前端把问题发给重构版 API
+2. 后端创建 `Turn` 与 `Run`
+3. 后台任务推动运行经过 `route / workflow / answer` 阶段
+4. 前端在运行激活期间持续轮询线程详情
+5. 只有运行成功完成后才会写入最终 assistant 消息
+6. cancel / regenerate 都围绕 `Run` 工作，而不是围绕页面壳层工作
 
-## Development topology
+## 本地开发形态
 
-### Run backend
+### 启动后端
+
 ```bash
 uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### Run frontend
+### 启动前端
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-The Vite frontend proxies `/api` to the backend on port `8000`.
+`frontend` 中的 Vite 开发服务器会把 `/api` 代理到 `8000` 端口的后端。
 
-## Verification expectations
+## 验证要求
 
-A rewrite change should verify at least:
+一次重构改动至少应验证：
 
-- backend import/startup works
-- `/api/health` responds
-- frontend builds successfully
-- send / regenerate / cancel flows reach terminal run states
-- admin data still works, including `last_login_at`
+- 后端导入与启动正常
+- `/api/health` 可访问
+- 前端可以成功构建
+- send / regenerate / cancel 能走到终态
+- 管理数据仍然可用，包括 `last_login_at`
 
-## Key preserved asset
+## 当前保留下来的关键资产
 
 - `backend/app/config/tables.json`
-  - schema registry source of truth for the active backend
+  - 当前后端使用的表结构唯一事实来源

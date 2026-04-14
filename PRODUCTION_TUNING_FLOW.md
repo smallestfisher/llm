@@ -36,7 +36,7 @@
 
 1. 先确认真实表和字段
 2. 先改 schema/config
-3. 再改 skill 边界和 SQL 规则
+3. 再改技能边界和 SQL 规则
 4. 再改 router / filter / lexicon
 5. 再改 SQL 保护链
 6. 最后补回归测试
@@ -45,7 +45,7 @@
 
 ## 3. 推荐执行阶段
 
-### Phase 0: 冻结当前基线
+### 阶段 0：冻结当前基线
 
 目的：
 
@@ -54,7 +54,7 @@
 动作：
 
 1. 跑一遍静态测试
-2. 跑一遍 live regression
+2. 跑一遍在线回归
 3. 记录当前通过率
 4. 保留当前 `tests/goldens.json`
 
@@ -71,7 +71,7 @@ PYTHONPATH=. python3 tests/eval_runner.py
 - 当前通过率
 - 当前已知误差点
 
-### Phase 1: 表结构确认
+### 阶段 1：表结构确认
 
 目的：
 
@@ -93,7 +93,7 @@ PYTHONPATH=. python3 tests/eval_runner.py
 - `tables.json` 已经能独立描述真实 schema
 - 不再依赖“口头约定”
 
-### Phase 2: 业务口径确认
+### 阶段 2：业务口径确认
 
 目的：
 
@@ -101,7 +101,7 @@ PYTHONPATH=. python3 tests/eval_runner.py
 
 动作：
 
-按 skill 分别确认：
+按技能分别确认：
 
 #### `production`
 
@@ -134,13 +134,13 @@ PYTHONPATH=. python3 tests/eval_runner.py
 
 交付物：
 
-- 每个 skill 的字段口径清单
+- 每个技能的字段口径清单
 
-### Phase 3: Skill 精调
+### 阶段 3：技能精调
 
 目的：
 
-- 让每个 skill 只做自己的事，并且按真实字段写 SQL
+- 让每个技能只做自己的事，并且按真实字段写 SQL
 
 动作：
 
@@ -161,14 +161,14 @@ PYTHONPATH=. python3 tests/eval_runner.py
 
 判断标准：
 
-- skill 不再跨域脑补字段
+- 技能不再跨域脑补字段
 - 首发 SQL 更贴真实字段
 
-### Phase 4: Router / Filter / Lexicon 精调
+### 阶段 4：Router / Filter / Lexicon 调优
 
 目的：
 
-- 让真实业务问法能更稳定地路到正确 skill
+- 让真实业务问法能更稳定地路到正确技能
 
 动作：
 
@@ -191,7 +191,7 @@ PYTHONPATH=. python3 tests/eval_runner.py
 
 - 真实问法不需要“改写后才识别”
 
-### Phase 5: SQL 保护链精调
+### 阶段 5：SQL 保护链精调
 
 目的：
 
@@ -218,7 +218,7 @@ PYTHONPATH=. python3 tests/eval_runner.py
 - 首发 SQL 即使不完美，也尽量不直接报错
 - 常见错误能自动被硬化或 lint 拦住
 
-### Phase 6: 跨域精调
+### 阶段 6：跨域精调
 
 目的：
 
@@ -248,9 +248,9 @@ PYTHONPATH=. python3 tests/eval_runner.py
 
 判断标准：
 
-- 跨域 skill 不再互相脑补字段
+- 跨域技能不再互相脑补字段
 
-### Phase 7: 回归测试补齐
+### 阶段 7：回归测试补齐
 
 目的：
 
@@ -264,7 +264,7 @@ PYTHONPATH=. python3 tests/eval_runner.py
 - [tests/eval_runner.py](/home/y/llm/llm/tests/eval_runner.py)
 - `tests/test_*.py`
 
-每个 skill 至少补：
+每个技能至少补：
 
 - 典型单域问题
 - 容易歧义的问题
@@ -301,7 +301,7 @@ PYTHONPATH=. python3 tests/eval_runner.py
 
 1. 改代码
 2. 跑静态测试
-3. 跑 live regression
+3. 跑在线回归
 4. 看失败题
 5. 只修高价值失败模式
 6. 再回归
@@ -309,7 +309,7 @@ PYTHONPATH=. python3 tests/eval_runner.py
 建议不要在一轮里同时：
 
 - 改 schema
-- 改 5 个 skill
+- 改 5 个技能
 - 改所有测试
 
 这样很难定位问题来源。
@@ -320,7 +320,7 @@ PYTHONPATH=. python3 tests/eval_runner.py
 
 1. 本轮变更范围
 2. 修改了哪些表/字段认知
-3. 修改了哪些 skill
+3. 修改了哪些技能
 4. 修改了哪些保护规则
 5. 回归通过率
 6. 剩余未解决问题
@@ -330,9 +330,9 @@ PYTHONPATH=. python3 tests/eval_runner.py
 一轮精调可以认为完成，当同时满足：
 
 - 目标表结构已对齐
-- 目标 skill 已收口
+- 目标技能已收口
 - 静态测试通过
-- live regression 通过
+- 在线回归通过
 - 新增规则不再明显提升质量
 
 到这时就不应该继续堆运行时规则了，而应该转向：

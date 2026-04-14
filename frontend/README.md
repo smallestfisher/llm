@@ -1,57 +1,55 @@
-# Frontend Rewrite
+# 前端重构说明
 
-This directory contains the SPA frontend for the BOE Data Copilot rewrite.
+该目录包含 BOE Data Copilot 重构版的 SPA 前端。
 
-## Role in the system
+## 在系统中的角色
 
-The frontend replaces the old server-rendered template/static shell.
+前端替代了旧的服务端模板 / 静态页面壳层，负责：
 
-It is responsible for:
+- 认证流程
+- 线程导航
+- 聊天工作区
+- 运行进度展示
+- 重新生成 / 取消交互
+- SQL 详情展示
+- 个人页
+- 管理员用户页
+- 审计页
 
-- auth flows
-- thread navigation
-- chat workspace
-- run progress presentation
-- regenerate / cancel interactions
-- SQL detail display
-- profile page
-- admin users page
-- audit page
+## 当前目录结构
 
-## Current structure
+- `src/main.tsx`：SPA 挂载入口
+- `src/App.tsx`：顶层容器
+- `src/api.ts`：后端 API 调用辅助
+- `src/components.tsx`：共享 UI 组件
+- `src/view-models.ts`：派生状态辅助逻辑
+- `src/styles.css`：重构版界面样式
 
-- `src/main.tsx` — SPA mount point
-- `src/App.tsx` — top-level container
-- `src/api.ts` — backend API client helpers
-- `src/components.tsx` — shared UI components
-- `src/view-models.ts` — derived state helpers
-- `src/styles.css` — rewrite UI styles
+## UI 状态模型
 
-## UI state model
+前端的大部分行为都基于后端返回的线程详情派生，主要包括：
 
-The frontend derives most behavior from thread detail returned by the backend:
+- 当前线程
+- 当前活动运行
+- 运行步骤
+- 最新 assistant 消息
+- 管理页 / 个人页状态
 
-- active thread
-- active run
-- run steps
-- latest assistant messages
-- admin/profile state
+这样界面就能反映真实的运行生命周期，而不是假设一次同步阻塞的请求-响应过程。
 
-That allows the UI to reflect real run lifecycle instead of assuming a single blocking request-response cycle.
+## 当前运行行为
 
-## Current run behavior
+发送或重新生成后：
 
-After send or regenerate:
+1. SPA 调用重构版 API
+2. 后端返回运行启动信息
+3. SPA 刷新线程详情
+4. 只要运行仍在进行，就持续轮询
+5. UI 展示 `pending / running / cancelling / completed / failed / cancelled`
 
-1. the SPA calls the rewrite API
-2. the backend returns run-start information
-3. the SPA refreshes thread detail
-4. polling continues while the run is active
-5. the UI reflects `pending / running / cancelling / completed / failed / cancelled`
+运行面板和消息操作现在完全由后端 `Run` 状态驱动，而不是依赖旧页面壳层中的 DOM 事件拼装。
 
-The run panel and message actions are now driven by backend run state rather than legacy DOM event plumbing.
-
-## Run locally
+## 本地运行
 
 ```bash
 cd frontend
@@ -59,16 +57,16 @@ npm install
 npm run dev
 ```
 
-## Build
+## 构建
 
 ```bash
 npm run build
 ```
 
-## Dev proxy
+## 开发代理
 
-`vite.config.ts` proxies `/api` to `http://127.0.0.1:8000`, so local development expects the rewrite backend to be running on that port.
+`vite.config.ts` 会把 `/api` 代理到 `http://127.0.0.1:8000`，因此本地开发时需要重构版后端运行在该端口。
 
-## Current status
+## 当前状态
 
-The frontend already supports login/register, threads, chat, regenerate, stop, SQL details, profile, admin users, and audit pages. It is still being refined structurally so `App.tsx` can get thinner over time, but it is already the active UI architecture for this branch.
+当前前端已经支持登录 / 注册、线程、聊天、重新生成、停止运行、SQL 详情、个人页、管理员页和审计页。结构上仍在继续收敛，后续会进一步瘦身 `App.tsx`，但它已经是当前分支的正式 UI 架构。

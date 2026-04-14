@@ -1,14 +1,14 @@
-# Production Tuning Template
+# 生产库精调模板
 
 用于把当前工程从“现有字段版本”继续精调到正式生产库字段。
 
-当前模板已经对齐到当前 5-skill 架构与 11 张业务表，不再使用旧版的 3-skill / 12 表假设。
+当前模板已经对齐到现在的 5 个技能架构与 11 张业务表，不再沿用旧版的 3 技能 / 12 表假设。
 
 ## 1. 使用原则
 
 1. 先确认真实表和字段
 2. 再改 [backend/app/config/tables.json](/home/y/llm/llm/backend/app/config/tables.json)
-3. 再改对应 skill
+3. 再改对应技能
 4. 再改 router / heuristics / lexicon
 5. 最后补 tests / goldens
 
@@ -43,7 +43,7 @@
 
 ### `general`
 
-- 兜底 skill
+- 兜底技能
 - 不应该承接高频正式业务问题
 
 ## 3. 当前 11 张业务表
@@ -62,7 +62,7 @@
 
 ## 4. 环境信息
 
-### 基础连接
+### 基础连接信息
 
 - 环境名称：
 - 数据库类型：
@@ -91,7 +91,7 @@
 
 每张表复制一份。
 
-### 表名: `<table_name>`
+### 表名：`<table_name>`
 
 - 中文名称：
 - 所属技能：
@@ -116,19 +116,19 @@
 
 #### 禁止或高风险事项
 
-- 
+-
 
 ## 6. 字段模板
 
-### 表名: `<table_name>`
+### 表名：`<table_name>`
 
-| 字段名 | 中文含义 | 类型 | 示例值 | 可空 | 可筛选 | 可分组 | 可聚合 | 业务别名/黑话 | 备注 |
+| 字段名 | 中文含义 | 类型 | 示例值 | 可空 | 可筛选 | 可分组 | 可聚合 | 业务别名 / 黑话 | 备注 |
 |---|---|---|---|---|---|---|---|---|---|
 |  |  |  |  |  |  |  |  |  |  |
 
 ## 7. 技能精调清单
 
-### Production Skill
+### 生产技能
 
 对应文件：
 
@@ -142,7 +142,7 @@
 - `act_type` 真实枚举值
 - 是否存在工厂字段别名
 
-### Planning Skill
+### 计划技能
 
 对应文件：
 
@@ -153,9 +153,9 @@
 - 日 / 周 / 月三层计划边界
 - 周版本口径
 - `daily_PLAN.target_qty` 是投入还是产出
-- `monthly_plan_approved` 的 four target 字段真实含义
+- `monthly_plan_approved` 的四个 target 字段真实含义
 
-### Inventory Skill
+### 库存技能
 
 对应文件：
 
@@ -163,12 +163,12 @@
 
 需要确认：
 
-- TTL/Hold 真实业务定义
+- TTL / Hold 真实业务定义
 - OMS 中客户仓 / hub 的判断字段
 - 库龄桶是否固定
 - `report_date` / `report_month` 最新值规则
 
-### Demand Skill
+### 需求技能
 
 对应文件：
 
@@ -181,7 +181,7 @@
 - `MONTH` / `NEXT_REQUIREMENT` / `LAST_REQUIREMENT` 真实月份映射
 - 多月汇总口径
 
-### Sales Skill
+### 销售技能
 
 对应文件：
 
@@ -219,33 +219,7 @@
 - 伪月份占位
 - 伪字段别名
 - `SELECT *`
-- 越界表
-- 缺失时间 / 版本过滤
+- 缺失版本 / 时间过滤
 - 占位字面值
+- 不必要的 JOIN
 - 带空格列名
-
-## 10. 回归测试清单
-
-对应文件：
-
-- [tests/goldens.json](/home/y/llm/llm/tests/goldens.json)
-- [tests/eval_runner.py](/home/y/llm/llm/tests/eval_runner.py)
-
-建议按 skill 分组补：
-
-- `production` 真实问法
-- `planning` 真实问法
-- `inventory` 真实问法
-- `demand` 真实问法
-- `sales` 真实问法
-- `cross_domain` 真实问法
-
-## 11. 交付检查
-
-- [ ] `tables.json` 已更新
-- [ ] skill prompt 已更新
-- [ ] router/filter 已更新
-- [ ] lint/hardening 已更新
-- [ ] goldens 已更新
-- [ ] 单测通过
-- [ ] live regression 通过

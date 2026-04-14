@@ -15,10 +15,10 @@
 - 用户启用/禁用、角色调整、管理员重置密码
 - 线程、消息、运行状态、重新生成、停止运行
 - 审计日志
-- 5-skill 单域问答与跨域问答
+- 5 个技能的单域问答与跨域问答
 - SQL 执行前硬化与 lint
 
-## 当前 5-Skill
+## 当前 5 个技能
 
 1. `production`
    生产执行，只看实际投入、产出、报废、不良
@@ -34,9 +34,11 @@
 另有：
 
 - `cross_domain`
-  由 composer 拆成多个 skill 子任务后汇总
+  由 composer 拆成多个技能子任务后汇总
 - `general`
-  低置信度或兜底问题使用
+  低置信度、非结构化或兜底问题使用
+
+说明：router 内部仍可能返回 `legacy`，但在 orchestrator 中会统一映射到 `general` 技能执行，并不是一个独立业务技能。
 
 ## 当前业务表
 
@@ -62,7 +64,7 @@
 2. `backend/app/api/routes.py` 处理认证、线程、运行、管理员接口
 3. `backend/app/services/*` 维护 `Thread / Turn / Run / Message / AuditLog`
 4. `backend/app/workflow/executor.py` 驱动 `backend/app/workflow/orchestrator.py`
-5. `backend/app/workflow/*`、`backend/app/semantic/*`、`backend/app/execution/*`、`backend/app/config/tables.json` 负责领域路由、跨域编排、SQL 运行时和 schema source of truth
+5. `backend/app/workflow/*`、`backend/app/semantic/*`、`backend/app/execution/*`、`backend/app/config/*` 负责领域路由、跨域编排、SQL 运行时以及表结构 / 路由配置；其中表结构唯一事实来源为 `backend/app/config/tables.json`
 
 说明：
 
@@ -171,7 +173,7 @@ npm run build --prefix frontend
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-Live regression：
+在线回归：
 
 ```bash
 PYTHONPATH=. python3 tests/eval_runner.py
@@ -184,7 +186,7 @@ PYTHONPATH=. python3 tests/eval_runner.py
 - [PROJECT_OVERVIEW.md](/home/y/llm/llm/PROJECT_OVERVIEW.md)
   当前项目结构说明
 - [FIVE_SKILL_MAPPING.md](/home/y/llm/llm/FIVE_SKILL_MAPPING.md)
-  当前 11 张表到 5-skill 的映射
+  当前 11 张表到 5 个技能的映射
 - [PRODUCTION_TUNING_FLOW.md](/home/y/llm/llm/PRODUCTION_TUNING_FLOW.md)
   生产库字段精调流程
 - [PRODUCTION_TUNING_TEMPLATE.md](/home/y/llm/llm/PRODUCTION_TUNING_TEMPLATE.md)

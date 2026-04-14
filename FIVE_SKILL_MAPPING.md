@@ -1,10 +1,10 @@
-# 当前 11 张表到 5-Skill 的映射
+# 当前 11 张表到 5 个技能的映射
 
 这份文档描述的是当前工程真实落地后的映射，不再使用旧版本里已经失效的 `daily_schedule`、`work_in_progress`、12 表假设。
 
 ## 1. 当前技能划分
 
-当前运行时的 5 个主业务 skill：
+当前运行时的 5 个主业务技能：
 
 1. `production`
 2. `planning`
@@ -15,13 +15,13 @@
 另有：
 
 - `general`
-  兜底 skill
+  兜底技能
 - `cross_domain`
-  不是独立业务表 skill，而是编排模式
+  不是独立业务表技能，而是编排模式
 
-## 2. 表到 Skill 的归属
+## 2. 表到技能的归属
 
-| 表名 | 主归属 Skill | 说明 |
+| 表名 | 主归属技能 | 说明 |
 |---|---|---|
 | `production_actuals` | `production` | 生产执行主表 |
 | `daily_PLAN` | `planning` | 日排产主表 |
@@ -32,10 +32,10 @@
 | `v_demand` | `demand` | V版 forecast 主表 |
 | `p_demand` | `demand` | P版 commit 主表 |
 | `sales_financial_perf` | `sales` | 销量/财务业绩主表 |
-| `product_attributes` | 共享辅助表 | 多 skill 共用维表 |
-| `product_mapping` | 共享辅助表 | 多 skill 共用映射表 |
+| `product_attributes` | 共享辅助表 | 多技能共用维表 |
+| `product_mapping` | 共享辅助表 | 多技能共用映射表 |
 
-## 3. 每个 Skill 的职责边界
+## 3. 每个技能的职责边界
 
 ### `production`
 
@@ -194,11 +194,11 @@
 
 ## 6. 当前建议
 
-如果后续继续做精调，原则不是再拆更多 skill，而是：
+如果后续继续做精调，原则不是再拆更多技能，而是：
 
 1. 保持这 5 个域边界稳定
 2. 让每个域 first-shot SQL 更稳
 3. 增加真实问题集
 4. 用生产字段继续收窄 prompt 和 lint
 
-当前这版 5-skill 已经足够覆盖主问题类型，不建议再回退到大而混的 skill。
+当前这版 5 个技能已经足够覆盖主问题类型，不建议再回退到大而混的技能。

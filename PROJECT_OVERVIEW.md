@@ -10,11 +10,11 @@
 
 运行主链路：
 
-`frontend SPA -> backend API -> backend services/run lifecycle -> backend workflow/semantic/execution -> db/answer`
+`前端 SPA -> 后端 API -> 后端 services / run 生命周期 -> 后端 workflow / semantic / execution -> 数据库 / 回答`
 
 ## 2. 分层结构
 
-### Frontend 层
+### 前端层
 
 - `frontend/src/main.tsx`
   SPA 挂载入口
@@ -31,12 +31,12 @@
 
 - 登录注册
 - 线程列表与聊天工作区
-- Run 状态展示
+- 运行状态展示
 - 重新生成 / 停止运行
 - SQL 详情与表格结果
 - 个人设置、管理员页、审计页
 
-### Backend API 层
+### 后端 API 层
 
 - `backend/app/main.py`
   FastAPI 应用入口
@@ -48,11 +48,11 @@
 职责：
 
 - 认证
-- 线程 / 消息 / run API
+- 线程 / 消息 / 运行 API
 - 管理员与审计 API
 - 生命周期驱动的运行状态返回
 
-### Application Service 层
+### 应用服务层
 
 - `backend/app/services/chat_execution_service.py`
 - `backend/app/services/run_service.py`
@@ -62,12 +62,12 @@
 
 职责：
 
-- 启动 run
-- 后台执行 workflow
-- 持久化 run/turn/message 状态
-- 查询线程详情与管理数据
+- 启动 initial / regenerate 运行
+- 后台执行工作流并推进 `route -> workflow -> answer`
+- 持久化 thread / turn / run / message 状态
+- 查询线程详情、用户列表与审计列表
 
-### Domain / Persistence 层
+### 领域 / 持久化层
 
 - `backend/app/models/*`
 - `backend/app/repositories/*`
@@ -79,7 +79,7 @@
 - 数据库 session 与持久化
 - 后端本地状态存储
 
-### Semantic 层
+### 语义层
 
 - `backend/app/workflow/router.py`
 - `backend/app/semantic/filters.py`
@@ -102,9 +102,11 @@
 - `demand`
 - `sales`
 - `cross_domain`
-- `legacy` / `general`
+- `legacy`
 
-### Orchestrator 层
+说明：`legacy` 是 router 的低置信度或非结构化兜底结果，进入 orchestrator 后会统一转成 `general` 技能执行。
+
+### 编排层
 
 - `backend/app/workflow/orchestrator.py`
 
@@ -112,10 +114,10 @@
 
 - 主调度入口
 - 单域 / 跨域执行编排
-- 状态汇总
-- 技能结果回传
+- `legacy -> general` 兜底映射
+- 技能结果回传与最终答案汇总
 
-### Skill 层
+### 技能层
 
 - `backend/app/skills/base.py`
 - `backend/app/skills/production.py`
@@ -135,7 +137,7 @@
 - SQL 反思修复
 - answer prompt
 
-### Composer 层
+### 跨域组合层
 
 - `backend/app/workflow/composer.py`
 
@@ -145,7 +147,7 @@
 - 生成域内子任务问题
 - 汇总多域执行结果
 
-### Runtime / Execution 层
+### 运行 / 执行层
 
 - `backend/app/execution/llm_client.py`
 - `backend/app/execution/sql_guard.py`
@@ -161,9 +163,9 @@
 - SQL lint
 - SQL 执行
 - 回答生成
-- 状态对象定义
+- 工作流状态对象定义
 
-### Schema / Config 层
+### 表结构 / 配置层
 
 - `backend/app/config/tables.json`
 - `backend/app/config/intents.json`
@@ -260,11 +262,11 @@
 
 ## 4. 跨域模式
 
-跨域问题不会直接交给一个大 skill 硬做，而是：
+跨域问题不会直接交给一个大技能硬做，而是：
 
 1. router 判断是 `cross_domain`
 2. composer 拆成多个域内子任务
-3. 每个 skill 只回答本域事实
+3. 每个技能只回答本域事实
 4. orchestrator 汇总结果
 
 当前典型组合：

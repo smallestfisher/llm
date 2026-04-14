@@ -1,22 +1,22 @@
-# Application Services
+# 应用服务层说明
 
-Current service boundaries:
+当前服务边界如下：
 
 - `auth_service.py`
-  authentication and user creation/login helpers
+  - 认证、用户创建、登录辅助逻辑
 - `admin_service.py`
-  user status and password management
+  - 用户状态与密码管理
 - `audit_service.py`
-  audit-log write wrapper
+  - 审计日志写入封装
 - `chat_service.py`
-  route snapshot and chat-history shaping
+  - 路由快照与聊天历史整理
 - `chat_execution_service.py`
-  background run execution orchestration
+  - 后台运行执行编排
 - `run_service.py`
-  run lifecycle mutations
+  - 运行生命周期状态变更
 - `thread_service.py`
-  canonical thread/turn/message/run persistence helpers
+  - 线程 / 轮次 / 消息 / 运行的标准持久化辅助
 - `thread_query_service.py`
-  thread detail and summary shaping for API responses
+  - 面向 API 响应的线程详情与摘要整理
 - `user_admin_query_service.py`
-  admin-side user and audit list views
+  - 管理端用户列表与审计列表查询视图
