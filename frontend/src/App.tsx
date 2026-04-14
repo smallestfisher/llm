@@ -557,13 +557,13 @@ export function App() {
       <aside className="sidebar">
         <div className="sidebar-brand">
           <div className="brand-logo">B</div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fff' }}>Data Copilot</span>
-            <span style={{ fontSize: '0.7rem', color: '#52525b' }}>{session.username}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>Data Copilot</span>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-desc)', fontWeight: 500 }}>{session.username}</span>
           </div>
         </div>
 
-        <button className="btn btn-primary" onClick={handleCreateThread} disabled={busy || runBusy} style={{ margin: '0 0.75rem 1rem', borderRadius: '12px' }}>
+        <button className="btn-create" onClick={handleCreateThread} disabled={busy || runBusy}>
           + 新建对话
         </button>
 
@@ -579,17 +579,19 @@ export function App() {
           ))}
         </nav>
 
-        <h3>历史会话</h3>
-        <ThreadList
-          threads={threads}
-          activeThreadId={activeThreadId}
-          busy={busy || runBusy}
-          onSelect={handleSelectThread}
-          onDelete={handleDeleteThread}
-        />
+        <h3>历史记录</h3>
+        <div className="thread-list">
+          <ThreadList
+            threads={threads}
+            activeThreadId={activeThreadId}
+            busy={busy || runBusy}
+            onSelect={handleSelectThread}
+            onDelete={handleDeleteThread}
+          />
+        </div>
 
-        <div style={{ marginTop: 'auto', padding: '1rem 0.75rem 0' }}>
-          <button className="nav-item" onClick={handleLogout} style={{ color: '#ef4444' }}>
+        <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid var(--border-subtle)' }}>
+          <button className="nav-item" onClick={handleLogout} style={{ color: '#ef4444', opacity: 0.8 }}>
             退出登录
           </button>
         </div>
@@ -597,7 +599,7 @@ export function App() {
 
       <main className="main-panel">
         {error && (
-          <div style={{ position: 'absolute', top: '80px', left: '50%', transform: 'translateX(-50%)', z-index: 100, background: '#ef4444', color: '#fff', padding: '0.5rem 1rem', borderRadius: '8px', fontSize: '0.8rem', boxShadow: '0 10px 20px rgba(0,0,0,0.4)' }}>
+          <div style={{ position: 'absolute', top: '80px', left: '50%', transform: 'translateX(-50%)', zIndex: 100, background: 'rgba(239, 68, 68, 0.9)', backdropFilter: 'blur(10px)', color: '#fff', padding: '0.6rem 1.25rem', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 600, boxShadow: '0 20px 40px rgba(0,0,0,0.4)' }}>
             {error}
           </div>
         )}
@@ -610,7 +612,7 @@ export function App() {
             activeRun={activeRun}
             renderMainTimeline={() => renderTimeline(activeThread, latestAssistantMessages, busy || runBusy, handleRegenerate, setQuestion)}
             renderRunInspector={() => (
-              <div style={{ maxWidth: '800px', margin: '0 auto', width: '100%' }}>
+              <div style={{ maxWidth: '800px', margin: '0 auto 1.5rem', width: '100%' }}>
                 <RunPanel
                   activeRun={activeRun}
                   busy={busy}
