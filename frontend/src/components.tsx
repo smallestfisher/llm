@@ -1,6 +1,5 @@
 import type { FormEvent, ReactNode } from 'react'
 import type { AuditRow, MessageRow, RunRow, ThreadDetail, ThreadSummary, UserRow } from './api'
-import { formatDisplayDate } from './view-models'
 
 type ThreadListProps = {
   threads: ThreadSummary[]
@@ -239,7 +238,7 @@ export function AuditPanel({ audits }: AuditPanelProps) {
                 <td style={{ padding: '1.25rem 1rem', color: 'var(--text-secondary)' }}>{row.target_type}</td>
                 <td style={{ padding: '1.25rem 1rem' }}><span className="status-pill">{row.status}</span></td>
                 <td style={{ padding: '1.25rem 1rem', fontWeight: 500 }}>{row.actor_username || 'system'}</td>
-                <td style={{ padding: '1.25rem 1rem', fontSize: '0.75rem', color: 'var(--text-desc)', fontFamily: 'monospace' }}>{formatDisplayDate(row.created_at)}</td>
+                <td style={{ padding: '1.25rem 1rem', fontSize: '0.75rem', color: 'var(--text-desc)', fontFamily: 'monospace' }}>{row.created_at}</td>
               </tr>
             ))}
           </tbody>
