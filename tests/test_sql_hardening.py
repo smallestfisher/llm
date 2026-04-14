@@ -1,6 +1,6 @@
 import unittest
 
-from core.runtime.skill_runtime import harden_sql, lint_sql
+from app.execution import harden_sql, lint_sql
 
 
 class SqlHardeningTestCase(unittest.TestCase):

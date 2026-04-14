@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from app.models import Thread
+from sqlalchemy.orm import Session
+
+from app.models import Run, Thread, Turn, User
 
 
 class ThreadQueryService:
@@ -14,6 +16,9 @@ class ThreadQueryService:
             }
             for row in rows
         ]
+
+    def get_thread_for_user(self, db: Session, public_id: str, user: User) -> Thread | None:
+        return db.query(Thread).filter(Thread.public_id == public_id, Thread.owner_id == user.id).first()
 
     def get_thread_detail(self, thread: Thread) -> dict:
         messages = sorted(thread.messages, key=lambda row: (row.created_at, row.id))
@@ -78,3 +83,9 @@ class ThreadQueryService:
             "sql_query": row.sql_query,
             "error_message": row.error_message,
         }
+
+    def get_run_for_thread(self, thread: Thread, run_id: str) -> Run | None:
+        return next((row for row in thread.runs if row.public_id == run_id), None)
+
+    def get_turn_for_run(self, thread: Thread, run: Run) -> Turn | None:
+        return next((row for row in thread.turns if row.id == run.turn_id), None)

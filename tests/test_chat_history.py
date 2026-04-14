@@ -1,7 +1,8 @@
 import unittest
 from types import SimpleNamespace
 
-from core.auth_db import build_history_from_messages, build_regenerate_seed_history, build_regenerate_seed_history_for_message
+from app.workflow import history as history_module
+from app.workflow.history import build_history_from_messages, build_regenerate_seed_history, build_regenerate_seed_history_for_message
 
 
 class ChatHistoryTestCase(unittest.TestCase):
@@ -25,14 +26,12 @@ class ChatHistoryTestCase(unittest.TestCase):
         ]
         thread = SimpleNamespace(id=1)
 
-        import core.auth_db as auth_db
-
-        original = auth_db.list_thread_messages
-        auth_db.list_thread_messages = lambda session, current_thread: messages
+        original = history_module.list_thread_messages
+        history_module.list_thread_messages = lambda session, current_thread: messages
         try:
             history, last_user, last_assistant = build_regenerate_seed_history(None, thread)
         finally:
-            auth_db.list_thread_messages = original
+            history_module.list_thread_messages = original
 
         self.assertEqual(history, ["问: 问题1\n答: 回答1"])
         self.assertEqual(last_user.content, "问题2")
@@ -46,14 +45,12 @@ class ChatHistoryTestCase(unittest.TestCase):
         ]
         thread = SimpleNamespace(id=1)
 
-        import core.auth_db as auth_db
-
-        original = auth_db.list_thread_messages
-        auth_db.list_thread_messages = lambda session, current_thread: messages
+        original = history_module.list_thread_messages
+        history_module.list_thread_messages = lambda session, current_thread: messages
         try:
             history, last_user, last_assistant = build_regenerate_seed_history(None, thread)
         finally:
-            auth_db.list_thread_messages = original
+            history_module.list_thread_messages = original
 
         self.assertEqual(history, ["问: 问题1\n答: 回答1"])
         self.assertEqual(last_user.content, "问题2")
@@ -70,14 +67,12 @@ class ChatHistoryTestCase(unittest.TestCase):
         ]
         thread = SimpleNamespace(id=1)
 
-        import core.auth_db as auth_db
-
-        original = auth_db.list_thread_messages
-        auth_db.list_thread_messages = lambda session, current_thread: messages
+        original = history_module.list_thread_messages
+        history_module.list_thread_messages = lambda session, current_thread: messages
         try:
             history, last_user, last_assistant = build_regenerate_seed_history_for_message(None, thread, 4)
         finally:
-            auth_db.list_thread_messages = original
+            history_module.list_thread_messages = original
 
         self.assertEqual(history, ["问: 问题1\n答: 回答1"])
         self.assertEqual(last_user.content, "问题2")

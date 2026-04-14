@@ -6,7 +6,7 @@
 
 - 后端：`backend/app/main.py`
 - 前端：`frontend/` SPA
-- 业务能力：继续复用 `core/` 下的 router / workflow / runtime / schema 语义
+- 业务能力：由 `backend/app` 下的 `workflow / skills / semantic / execution / config` 模块承载
 
 ## 当前能力
 
@@ -40,7 +40,7 @@
 
 ## 当前业务表
 
-当前运行时以 [core/config/tables.json](/home/y/llm/llm/core/config/tables.json) 为准，共 11 张表：
+当前运行时以 [backend/app/config/tables.json](/home/y/llm/llm/backend/app/config/tables.json) 为准，共 11 张表：
 
 - `v_demand`
 - `p_demand`
@@ -61,13 +61,13 @@
 1. 前端 SPA 请求进入 `/api`
 2. `backend/app/api/routes.py` 处理认证、线程、运行、管理员接口
 3. `backend/app/services/*` 维护 `Thread / Turn / Run / Message / AuditLog`
-4. `backend/app/workflow/executor.py` 继续桥接 `core/workflow/orchestrator.py`
-5. `core/router/*`、`core/runtime/*`、`core/config/tables.json` 继续承担领域路由、SQL 运行时和 schema source of truth
+4. `backend/app/workflow/executor.py` 驱动 `backend/app/workflow/orchestrator.py`
+5. `backend/app/workflow/*`、`backend/app/semantic/*`、`backend/app/execution/*`、`backend/app/config/tables.json` 负责领域路由、跨域编排、SQL 运行时和 schema source of truth
 
 说明：
 
 - 根目录旧的单体页面壳层已不再是当前分支主运行入口
-- `core/` 仍然是新架构正在复用的业务层，不属于废弃代码
+- 旧业务实现已退场，当前以 `backend/app` 为唯一业务实现
 
 ## 环境准备
 

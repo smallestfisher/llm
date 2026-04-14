@@ -1,7 +1,7 @@
 import unittest
 
-from core.router.filter_extractor import extract_shared_filters
-from core.router.intent_router import route_question
+from app.semantic.filters import extract_shared_filters
+from app.workflow.router import route_question
 
 
 class FilterExtractorTestCase(unittest.TestCase):

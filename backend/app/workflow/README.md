@@ -1,7 +1,8 @@
 # Workflow Layer
 
-This layer now owns the rewritten routing, orchestration, cross-domain
-composition, chat-history shaping, and workflow execution entrypoints.
+This layer owns the active routing, orchestration, cross-domain composition,
+chat-history shaping, and workflow execution entrypoints.
 
-It still uses `core/config/tables.json` as the schema source of truth, while the
-runtime logic itself lives under `backend/app`.
+It works together with `backend/app/semantic`, `backend/app/skills`,
+`backend/app/execution`, and `backend/app/config` to provide the full backend
+execution chain.

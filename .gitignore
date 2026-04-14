@@ -26,3 +26,6 @@ core/config/semantic_db/
 
 # OS/editor noise
 .DS_Store
+
+# Frontend dependencies and build output
+frontend/node_modules/

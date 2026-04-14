@@ -3,7 +3,7 @@ import sys
 import re
 import asyncio
 
-from core.workflow.orchestrator import get_compiled_workflow
+from app.workflow.orchestrator import get_compiled_workflow
 
 
 def is_field_in_sql(sql: str, expected_field: str) -> bool:

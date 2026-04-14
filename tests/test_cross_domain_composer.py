@@ -1,7 +1,7 @@
 import unittest
 
-from core.composer.cross_domain import CrossDomainComposer
-from core.runtime.state import RouteDecision, SkillExecution, SkillPlan, SkillResult
+from app.workflow.composer import CrossDomainComposer
+from app.workflow.state import RouteDecision, SkillExecution, SkillPlan, SkillResult
 
 
 class CrossDomainComposerTestCase(unittest.TestCase):

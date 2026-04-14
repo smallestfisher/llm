@@ -6,11 +6,11 @@
 
 - 后端入口：`backend/app/main.py`
 - 前端入口：`frontend/src/main.tsx`
-- 业务能力复用层：`core/`
+- 业务能力主实现：`backend/app`
 
 运行主链路：
 
-`frontend SPA -> backend API -> backend services/run lifecycle -> core router/workflow/runtime -> db/answer`
+`frontend SPA -> backend API -> backend services/run lifecycle -> backend workflow/semantic/execution -> db/answer`
 
 ## 2. 分层结构
 
@@ -77,12 +77,14 @@
 
 - `Thread / Turn / Run / Message / AuditLog` 建模
 - 数据库 session 与持久化
-- 新后端本地状态存储
+- 后端本地状态存储
 
-### Router 层
+### Semantic 层
 
-- `core/router/intent_router.py`
-- `core/router/filter_extractor.py`
+- `backend/app/workflow/router.py`
+- `backend/app/semantic/filters.py`
+- `backend/app/semantic/heuristics.py`
+- `backend/app/semantic/domains.py`
 
 职责：
 
@@ -90,6 +92,7 @@
 - 跨域判定
 - 共享过滤器抽取
 - 相对时间口径抽取
+- 目标表推断
 
 当前主要路由结果：
 
@@ -103,7 +106,7 @@
 
 ### Orchestrator 层
 
-- `core/workflow/orchestrator.py`
+- `backend/app/workflow/orchestrator.py`
 
 职责：
 
@@ -114,14 +117,14 @@
 
 ### Skill 层
 
-- `core/skills/base.py`
-- `core/skills/production/skill.py`
-- `core/skills/planning/skill.py`
-- `core/skills/inventory/skill.py`
-- `core/skills/demand/skill.py`
-- `core/skills/sales/skill.py`
-- `core/skills/generic/skill.py`
-- `core/skills/prompting.py`
+- `backend/app/skills/base.py`
+- `backend/app/skills/production.py`
+- `backend/app/skills/planning.py`
+- `backend/app/skills/inventory.py`
+- `backend/app/skills/demand.py`
+- `backend/app/skills/sales.py`
+- `backend/app/skills/generic.py`
+- `backend/app/execution/prompts.py`
 
 职责：
 
@@ -134,7 +137,7 @@
 
 ### Composer 层
 
-- `core/composer/cross_domain.py`
+- `backend/app/workflow/composer.py`
 
 职责：
 
@@ -142,10 +145,13 @@
 - 生成域内子任务问题
 - 汇总多域执行结果
 
-### Runtime 层
+### Runtime / Execution 层
 
-- `core/runtime/skill_runtime.py`
-- `core/runtime/state.py`
+- `backend/app/execution/llm_client.py`
+- `backend/app/execution/sql_guard.py`
+- `backend/app/execution/sql_executor.py`
+- `backend/app/presentation/answer_builder.py`
+- `backend/app/workflow/state.py`
 
 职责：
 
@@ -155,13 +161,14 @@
 - SQL lint
 - SQL 执行
 - 回答生成
+- 状态对象定义
 
 ### Schema / Config 层
 
-- `core/config/tables.json`
-- `core/config/intents.json`
-- `core/config/heuristics.json`
-- `core/config/lexicon.json`
+- `backend/app/config/tables.json`
+- `backend/app/config/intents.json`
+- `backend/app/config/heuristics.json`
+- `backend/app/config/lexicon.json`
 
 职责：
 
@@ -286,5 +293,5 @@
 ## 6. 说明
 
 - 根目录旧的 `app.py` + `templates/` + `static/` 单体页面壳层已废弃，不再作为当前主运行入口。
-- `core/` 不是废弃代码；当前 rewrite backend 仍通过桥接层复用它的 router/workflow/runtime。
-- `manage_users.py` 与 `core/auth_db.py` 目前仍保留为独立的本地运维链路，不应与旧页面壳层混为一谈。
+- `backend/app` 已经承接完整业务主链路。
+- `manage_users.py` 走后端模型与本地状态库，不再依赖旧 `core` 运维链路。

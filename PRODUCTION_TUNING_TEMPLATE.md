@@ -7,7 +7,7 @@
 ## 1. 使用原则
 
 1. 先确认真实表和字段
-2. 再改 [core/config/tables.json](/home/y/llm/llm/core/config/tables.json)
+2. 再改 [backend/app/config/tables.json](/home/y/llm/llm/backend/app/config/tables.json)
 3. 再改对应 skill
 4. 再改 router / heuristics / lexicon
 5. 最后补 tests / goldens
@@ -75,7 +75,7 @@
 ### 运行参数
 
 - `DB_URI`：
-- `LOCAL_DB_URI`：
+- `BACKEND_DB_URI`：
 - `OPENAI_BASE_URL`：
 - `LLM_MODEL`：
 
@@ -132,7 +132,7 @@
 
 对应文件：
 
-- [core/skills/production/skill.py](/home/y/llm/llm/core/skills/production/skill.py)
+- [backend/app/skills/production.py](/home/y/llm/llm/backend/app/skills/production.py)
 
 需要确认：
 
@@ -146,7 +146,7 @@
 
 对应文件：
 
-- [core/skills/planning/skill.py](/home/y/llm/llm/core/skills/planning/skill.py)
+- [backend/app/skills/planning.py](/home/y/llm/llm/backend/app/skills/planning.py)
 
 需要确认：
 
@@ -159,7 +159,7 @@
 
 对应文件：
 
-- [core/skills/inventory/skill.py](/home/y/llm/llm/core/skills/inventory/skill.py)
+- [backend/app/skills/inventory.py](/home/y/llm/llm/backend/app/skills/inventory.py)
 
 需要确认：
 
@@ -172,7 +172,7 @@
 
 对应文件：
 
-- [core/skills/demand/skill.py](/home/y/llm/llm/core/skills/demand/skill.py)
+- [backend/app/skills/demand.py](/home/y/llm/llm/backend/app/skills/demand.py)
 
 需要确认：
 
@@ -185,7 +185,7 @@
 
 对应文件：
 
-- [core/skills/sales/skill.py](/home/y/llm/llm/core/skills/sales/skill.py)
+- [backend/app/skills/sales.py](/home/y/llm/llm/backend/app/skills/sales.py)
 
 需要确认：
 
@@ -197,8 +197,8 @@
 
 对应文件：
 
-- [core/router/intent_router.py](/home/y/llm/llm/core/router/intent_router.py)
-- [core/router/filter_extractor.py](/home/y/llm/llm/core/router/filter_extractor.py)
+- [backend/app/workflow/router.py](/home/y/llm/llm/backend/app/workflow/router.py)
+- [backend/app/semantic/filters.py](/home/y/llm/llm/backend/app/semantic/filters.py)
 
 需要确认：
 
@@ -212,7 +212,7 @@
 
 对应文件：
 
-- [core/runtime/skill_runtime.py](/home/y/llm/llm/core/runtime/skill_runtime.py)
+- [backend/app/execution/sql_guard.py](/home/y/llm/llm/backend/app/execution/sql_guard.py)
 
 需要确认是否新增规则：
 

@@ -62,7 +62,7 @@
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_*.py'
-python3 -m compileall core tests
+python3 -m compileall backend/app tests
 PYTHONPATH=. python3 tests/eval_runner.py
 ```
 
@@ -86,7 +86,7 @@ PYTHONPATH=. python3 tests/eval_runner.py
 
 应更新：
 
-- [core/config/tables.json](/home/y/llm/llm/core/config/tables.json)
+- [backend/app/config/tables.json](/home/y/llm/llm/backend/app/config/tables.json)
 
 判断标准：
 
@@ -146,11 +146,11 @@ PYTHONPATH=. python3 tests/eval_runner.py
 
 逐个更新：
 
-- [core/skills/production/skill.py](/home/y/llm/llm/core/skills/production/skill.py)
-- [core/skills/planning/skill.py](/home/y/llm/llm/core/skills/planning/skill.py)
-- [core/skills/inventory/skill.py](/home/y/llm/llm/core/skills/inventory/skill.py)
-- [core/skills/demand/skill.py](/home/y/llm/llm/core/skills/demand/skill.py)
-- [core/skills/sales/skill.py](/home/y/llm/llm/core/skills/sales/skill.py)
+- [backend/app/skills/production.py](/home/y/llm/llm/backend/app/skills/production.py)
+- [backend/app/skills/planning.py](/home/y/llm/llm/backend/app/skills/planning.py)
+- [backend/app/skills/inventory.py](/home/y/llm/llm/backend/app/skills/inventory.py)
+- [backend/app/skills/demand.py](/home/y/llm/llm/backend/app/skills/demand.py)
+- [backend/app/skills/sales.py](/home/y/llm/llm/backend/app/skills/sales.py)
 
 重点改：
 
@@ -174,10 +174,10 @@ PYTHONPATH=. python3 tests/eval_runner.py
 
 更新：
 
-- [core/router/intent_router.py](/home/y/llm/llm/core/router/intent_router.py)
-- [core/router/filter_extractor.py](/home/y/llm/llm/core/router/filter_extractor.py)
-- [core/config/lexicon.json](/home/y/llm/llm/core/config/lexicon.json)
-- [core/config/heuristics.json](/home/y/llm/llm/core/config/heuristics.json)
+- [backend/app/workflow/router.py](/home/y/llm/llm/backend/app/workflow/router.py)
+- [backend/app/semantic/filters.py](/home/y/llm/llm/backend/app/semantic/filters.py)
+- [backend/app/config/lexicon.json](/home/y/llm/llm/backend/app/config/lexicon.json)
+- [backend/app/config/heuristics.json](/home/y/llm/llm/backend/app/config/heuristics.json)
 
 重点补：
 
@@ -201,7 +201,7 @@ PYTHONPATH=. python3 tests/eval_runner.py
 
 更新：
 
-- [core/runtime/skill_runtime.py](/home/y/llm/llm/core/runtime/skill_runtime.py)
+- [backend/app/execution/sql_guard.py](/home/y/llm/llm/backend/app/execution/sql_guard.py)
 
 关注：
 
@@ -228,8 +228,8 @@ PYTHONPATH=. python3 tests/eval_runner.py
 
 重点看：
 
-- [core/composer/cross_domain.py](/home/y/llm/llm/core/composer/cross_domain.py)
-- [core/workflow/orchestrator.py](/home/y/llm/llm/core/workflow/orchestrator.py)
+- [backend/app/workflow/composer.py](/home/y/llm/llm/backend/app/workflow/composer.py)
+- [backend/app/workflow/orchestrator.py](/home/y/llm/llm/backend/app/workflow/orchestrator.py)
 
 关注：
 

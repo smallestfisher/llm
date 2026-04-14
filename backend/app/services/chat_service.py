@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.models import Run, Thread, Turn
-from app.workflow.filters import extract_shared_filters
+from app.semantic.filters import extract_shared_filters
 from app.workflow.history import build_history_from_messages
 from app.workflow.router import decide_route
 

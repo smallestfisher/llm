@@ -1,10 +1,10 @@
 # Backend Rewrite
 
-This directory contains the rewrite FastAPI backend for BOE Data Copilot.
+This directory contains the FastAPI backend for BOE Data Copilot.
 
 ## Role in the system
 
-The backend is now the canonical server-side entrypoint for the application.
+The backend is the canonical server-side entrypoint for the application.
 
 It is responsible for:
 
@@ -12,8 +12,8 @@ It is responsible for:
 - thread / turn / run / message APIs
 - run cancellation and regeneration
 - admin and audit APIs
-- persisting rewrite-side state
-- bridging execution into the existing `core/` workflow stack where needed
+- persisting backend-side state
+- executing routing, orchestration, SQL hardening, SQL execution, and answer generation inside `backend/app`
 
 ## Current structure
 
@@ -23,8 +23,11 @@ It is responsible for:
 - `app/repositories` — persistence helpers
 - `app/schemas` — request/response contracts
 - `app/services` — application services
-- `app/workflow` — routing, execution, SQL/runtime bridges into `core`
-- `app/config` — rewrite config and schema registry bridge
+- `app/workflow` — routing, orchestration, history shaping
+- `app/semantic` — heuristics, filters, domain mapping
+- `app/execution` — LLM, SQL guard, SQL executor
+- `app/config` — schema and routing config
+- `app/presentation` — final answer payload shaping
 
 ## Runtime model
 
@@ -54,17 +57,6 @@ Current execution stages exposed to the frontend are:
 - `route`
 - `workflow`
 - `answer`
-
-## Dependencies retained on purpose
-
-This backend still reuses parts of the existing business stack:
-
-- `core/router/*`
-- `core/workflow/orchestrator.py`
-- `core/runtime/*`
-- `core/config/tables.json`
-
-That reuse is intentional bridge behavior while the rewrite stabilizes.
 
 ## Run locally
 
@@ -105,4 +97,4 @@ And for behavioral verification:
 
 ## Current status
 
-The backend is functional and already drives the rewrite UI. Some execution still delegates into existing `core` workflow modules, but the API surface and run lifecycle now live in the rewrite backend instead of the old web shell.
+The backend is functional and drives the rewrite UI end to end without relying on a parallel legacy business tree.

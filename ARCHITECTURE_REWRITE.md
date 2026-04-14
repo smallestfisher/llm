@@ -6,7 +6,7 @@ This branch now runs around a split application shape instead of the old monolit
 
 - **Backend**: FastAPI API service at `backend/app/main.py`
 - **Frontend**: SPA at `frontend/src/main.tsx`
-- **Shared business layer**: the rewrite still bridges into `core/` for router, workflow, runtime, and schema logic
+- **Business layer**: backend-native workflow, skills, semantic, execution, and config modules under `backend/app`
 
 The old root-level template/static web shell is no longer the active application architecture on this branch.
 
@@ -48,8 +48,8 @@ The SPA consumes backend thread detail and derives UI state from:
 2. Assistant messages are outputs of runs, not the run itself.
 3. Threads, turns, runs, and messages should be independently queryable.
 4. Admin and audit capabilities remain part of the product, not bolt-ons.
-5. `core/config/tables.json` remains the schema registry source of truth.
-6. The rewrite may reuse `core/` business logic, but should not keep the old web shell alive just for compatibility.
+5. `backend/app/config/tables.json` is the schema registry source of truth.
+6. The active backend should not depend on a parallel legacy business tree.
 
 ## Current architecture map
 
@@ -63,7 +63,13 @@ The SPA consumes backend thread detail and derives UI state from:
 - `backend/app/models/*`
   - rewrite persistence model
 - `backend/app/workflow/*`
-  - bridge modules into existing router/workflow/runtime logic
+  - orchestration, routing, history shaping
+- `backend/app/semantic/*`
+  - filter extraction, heuristics, domain mapping
+- `backend/app/execution/*`
+  - LLM, SQL hardening/lint, SQL execution
+- `backend/app/config/*`
+  - schema and routing config
 
 ### Frontend
 - `frontend/src/main.tsx`
@@ -76,16 +82,6 @@ The SPA consumes backend thread detail and derives UI state from:
   - thread/run/admin/profile/message UI components
 - `frontend/src/view-models.ts`
   - derived run/message state
-
-### Reused business layer
-The rewrite still intentionally depends on:
-
-- `core/router/*`
-- `core/workflow/orchestrator.py`
-- `core/runtime/*`
-- `core/config/tables.json`
-
-This means `core/` is not deprecated wholesale; only the old web-entry shell is.
 
 ## Current rewrite status
 
@@ -100,14 +96,15 @@ Implemented:
 - SPA login/register/chat/profile/admin/audit pages
 - polling-based run progress UI
 - SQL details and result-table rendering in the SPA
+- backend-native workflow/semantic/execution/config stack
 - removal of the legacy template/static shell from the active architecture
+- removal of the legacy business tree from active runtime ownership
 
 Still evolving:
 
-- less bridge dependence on legacy `core` execution internals
 - thinner frontend container layer
-- deeper backend-native execution behavior beyond bridge mode
 - richer progress behavior beyond polling
+- more focused prompt/routing tuning against production data
 
 ## Execution lifecycle
 
@@ -148,5 +145,5 @@ A rewrite change should verify at least:
 
 ## Key preserved asset
 
-- `core/config/tables.json`
-  - remains the schema registry source of truth
+- `backend/app/config/tables.json`
+  - schema registry source of truth for the active backend
