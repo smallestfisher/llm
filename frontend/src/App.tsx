@@ -22,7 +22,7 @@ import {
   type UserRow,
 } from './api'
 import { AdminUsersPanel, AuditPanel, ChatPanel, MessageCard, ProfilePanel, RunPanel, ThreadList } from './components'
-import { formatDisplayDate, getActiveRun, getActiveRunDetail, getHasRunningRun, getLatestAssistantMessageIds, getRunSteps, isRegeneratableMessage } from './view-models'
+import { getActiveRun, getActiveRunDetail, getHasRunningRun, getLatestAssistantMessageIds, getRunSteps, isRegeneratableMessage } from './view-models'
 
 const QUICK_SUGGESTIONS = [
   '查看 A1 产线昨天的平均良率',
@@ -479,31 +479,6 @@ export function App() {
     }
   }
 
-  async function handlePickQuickSuggestion(text: string) {
-    if (!session) return
-    setBusy(true)
-    setError('')
-    try {
-      let targetThreadId = activeThreadId
-      if (!targetThreadId) {
-        const created = await createThread(session.token)
-        targetThreadId = created.public_id
-        setActiveThreadId(targetThreadId)
-        await refreshThreads(session.token, targetThreadId)
-      }
-      await sendMessage(session.token, targetThreadId, text)
-      setQuestion('')
-      setRunBusy(true)
-      await refreshThreadDetail(session.token, targetThreadId)
-      await refreshThreads(session.token, targetThreadId)
-    } catch (err) {
-      setRunBusy(false)
-      setError(err instanceof Error ? err.message : '快捷发送失败')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   function handleLogout() {
     stopPolling()
     setRunBusy(false)
@@ -658,7 +633,7 @@ export function App() {
             activeThread={activeThread}
             busy={busy || runBusy || isPolling}
             activeRun={activeRun}
-            renderMainTimeline={() => renderTimeline(activeThread, latestAssistantMessages, busy || runBusy, handleRegenerate, handlePickQuickSuggestion)}
+            renderMainTimeline={() => renderTimeline(activeThread, latestAssistantMessages, busy || runBusy, handleRegenerate, setQuestion)}
             renderRunInspector={() => (
               <div style={{ maxWidth: '800px', margin: '0 auto 1.5rem', width: '100%' }}>
                 <RunPanel
