@@ -39,14 +39,11 @@ export function ThreadList({ threads, activeThreadId, busy, onSelect, onDelete }
 
 type RunPanelProps = {
   activeRun: RunRow | null
-  busy: boolean
   activeRunDetail: string
   runSteps: Array<{ key: string; label: string; state: string }>
-  hasRunningRun: boolean
-  onCancel: () => void
 }
 
-export function RunPanel({ activeRun, busy, runSteps, hasRunningRun, onCancel }: RunPanelProps) {
+export function RunPanel({ activeRun, runSteps }: RunPanelProps) {
   if (!activeRun) return null
   return (
     <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
@@ -55,15 +52,6 @@ export function RunPanel({ activeRun, busy, runSteps, hasRunningRun, onCancel }:
            {step.state === 'completed' ? '✓' : ''} {step.label}
         </div>
       ))}
-      {hasRunningRun && (
-        <button 
-          onClick={onCancel} 
-          disabled={busy || activeRun.status === 'cancelling'}
-          style={{ background: 'transparent', border: 'none', color: '#ff3b30', fontSize: '0.75rem', cursor: 'pointer', marginLeft: '12px', fontWeight: 600 }}
-        >
-          停止运行
-        </button>
-      )}
     </div>
   )
 }
@@ -73,6 +61,7 @@ type ChatPanelProps = {
   activeThread: ThreadDetail | null
   busy: boolean
   showThinking: boolean
+  hasRunningRun: boolean
   activeRun: RunRow | null
   renderMainTimeline: () => ReactNode
   renderRunInspector: () => ReactNode
@@ -80,6 +69,7 @@ type ChatPanelProps = {
   question: string
   onQuestionChange: (value: string) => void
   onSend: (event: FormEvent) => void
+  onCancel: () => void
   canSend: boolean
 }
 
@@ -88,6 +78,7 @@ export function ChatPanel({
   activeThread,
   busy,
   showThinking,
+  hasRunningRun,
   activeRun,
   renderMainTimeline,
   renderRunInspector,
@@ -95,6 +86,7 @@ export function ChatPanel({
   question,
   onQuestionChange,
   onSend,
+  onCancel,
   canSend,
 }: ChatPanelProps) {
   const messageListRef = useRef<HTMLDivElement | null>(null)
@@ -148,8 +140,13 @@ export function ChatPanel({
               }}
             />
             <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0.25rem 0.5rem' }}>
-              <button type="submit" className="btn-send" disabled={!canSend}>
-                {busy ? '...' : (
+              <button
+                type={hasRunningRun ? 'button' : 'submit'}
+                className={`btn-send ${hasRunningRun ? 'is-stop' : ''}`}
+                disabled={hasRunningRun ? activeRun?.status === 'cancelling' : !canSend}
+                onClick={hasRunningRun ? onCancel : undefined}
+              >
+                {hasRunningRun ? (activeRun?.status === 'cancelling' ? '停止中' : '停止') : busy ? '...' : (
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polyline points="22 2 15 22 11 13 2 9 22 2"></polyline></svg>
                 )}
               </button>

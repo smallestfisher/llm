@@ -667,17 +667,15 @@ export function App() {
             activeThread={activeThread}
             busy={busy || isChatLoading}
             showThinking={isChatLoading}
+            hasRunningRun={hasRunningRun}
             activeRun={activeRun}
             renderMainTimeline={() => renderTimeline(activeThread, hasResolvedThread, latestAssistantMessages, busy || runBusy, handleRegenerate, handlePickQuickSuggestion)}
             renderRunInspector={() => (
               <div style={{ maxWidth: '800px', margin: '0 auto 1.5rem', width: '100%' }}>
                 <RunPanel
                   activeRun={activeRun}
-                  busy={busy}
                   activeRunDetail={activeRunDetail}
                   runSteps={runSteps}
-                  hasRunningRun={hasRunningRun}
-                  onCancel={handleCancelRun}
                 />
               </div>
             )}
@@ -685,6 +683,7 @@ export function App() {
             question={question}
             onQuestionChange={setQuestion}
             onSend={handleSendMessage}
+            onCancel={handleCancelRun}
             canSend={canSend}
           />
         ) : null}

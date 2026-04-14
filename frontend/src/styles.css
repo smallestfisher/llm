@@ -342,6 +342,16 @@ textarea {
   cursor: pointer;
 }
 
+.btn-send.is-stop {
+  background: #fff1f0;
+  color: #c93c37;
+  border: 1px solid rgba(201, 60, 55, 0.18);
+}
+
+.btn-send.is-stop:hover {
+  background: #ffe7e5;
+}
+
 .btn-send:disabled { background: var(--bg-input); color: var(--text-desc); cursor: not-allowed; }
 
 /* Components */
