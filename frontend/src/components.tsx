@@ -198,23 +198,11 @@ export function AdminUsersPanel({ adminUsers, busy, drafts, onDraftChange, onTog
               <span className={`status-pill ${user.is_active ? 'active' : ''}`}>{user.is_active ? 'Active' : 'Banned'}</span>
             </div>
             <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
-              <button 
-                className="btn-ghost" 
-                style={{ flex: 1, padding: '0.6rem', fontSize: '0.75rem', borderColor: user.is_active ? 'rgba(239, 68, 68, 0.2)' : 'var(--border-subtle)' }} 
-                onClick={() => onToggleUser(user)}
-              >
-                {user.is_active ? '禁用账号' : '激活账号'}
-              </button>
-              <button 
-                className="btn-ghost" 
-                style={{ flex: 1, padding: '0.6rem', fontSize: '0.75rem' }} 
-                onClick={() => onToggleAdmin(user)}
-              >
-                {user.roles.includes('admin') ? '取消管理' : '提升管理'}
-              </button>
+              <button className="btn-ghost" style={{ flex: 1, padding: '0.6rem' }} onClick={() => onToggleUser(user)}>{user.is_active ? '禁用账号' : '激活账号'}</button>
+              <button className="btn-ghost" style={{ flex: 1, padding: '0.6rem' }} onClick={() => onToggleAdmin(user)}>{user.roles.includes('admin') ? '取消管理' : '提升管理'}</button>
             </div>
             <div style={{ display: 'flex', gap: '8px', background: 'rgba(0,0,0,0.03)', padding: '4px', borderRadius: '12px' }}>
-              <input style={{ flex: 1, padding: '0.6rem', fontSize: '0.85rem', border: 'none', background: 'transparent' }} value={drafts[user.id] || ''} onChange={(e) => onDraftChange(user.id, e.target.value)} placeholder="新密码" />
+              <input style={{ flex: 1, padding: '0.6rem', fontSize: '0.85rem', border: 'none', background: 'transparent' }} value={drafts[user.id] || ''} onChange={(e) => onDraftChange(user.id, e.target.value)} placeholder="重置密码" />
               <button className="btn-send" style={{ borderRadius: '10px', padding: '0 1rem' }} onClick={() => onResetPassword(user)}>确认</button>
             </div>
           </div>
