@@ -24,9 +24,9 @@ export function ThreadList({ threads, activeThreadId, busy, onSelect, onDelete }
             className="thread-delete" 
             disabled={busy} 
             onClick={() => onDelete(thread.public_id)}
-            style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', opacity: 0.4, border: 'none', background: 'transparent', cursor: 'pointer' }}
+            title="删除会话"
           >
-            ✕
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
           </button>
         </div>
       ))}
@@ -131,7 +131,9 @@ export function ChatPanel({
             />
             <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0.25rem 0.5rem' }}>
               <button type="submit" className="btn-send" disabled={!canSend}>
-                {busy ? '...' : '发送'}
+                {busy ? '...' : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polyline points="22 2 15 22 11 13 2 9 22 2"></polyline></svg>
+                )}
               </button>
             </div>
           </form>
@@ -320,7 +322,13 @@ export function MessageCard({ message, busy, canRegenerate, onRegenerate }: Mess
             </>
           )}
           {message.role === 'assistant' && canRegenerate && (
-            <button style={{ background: 'transparent', border: 'none', color: 'var(--primary-color)', fontSize: '0.75rem', cursor: 'pointer', padding: 0, fontWeight: 600 }} onClick={() => onRegenerate(message.id)} disabled={busy}>
+            <button 
+              className="btn-ghost" 
+              style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }} 
+              onClick={() => onRegenerate(message.id)} 
+              disabled={busy}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
               重新生成
             </button>
           )}
