@@ -9,7 +9,7 @@ from app.execution.llm_client import llm_complete
 from app.execution.sql_executor import execute_sql
 from app.execution.sql_guard import harden_sql, sanitize_sql
 from app.presentation.answer_builder import build_answer_payload
-from app.workflow.state import RouteDecision, SkillPlan, SkillResult
+from app.workflow.state import RouteDecision, SkillPlan, SkillResult, CancelledError
 from app.execution.prompts import (
     build_answer_prompt,
     build_guard_prompt,
@@ -32,6 +32,10 @@ class BaseSkill(ABC):
     helper_tables: tuple[str, ...] = ()
     keyword_table_map: tuple[tuple[tuple[str, ...], str], ...] = ()
 
+    def _check_cancellation(self, config: dict | None) -> None:
+        if config and config.get("is_cancelled") and config["is_cancelled"]():
+            raise CancelledError("Workflow cancelled")
+
     def plan(self, decision: RouteDecision) -> SkillPlan:
         tables = self._resolve_tables(decision)
         return SkillPlan(
@@ -51,7 +55,8 @@ class BaseSkill(ABC):
     ) -> dict[str, Any]:
         return self._initial_state(question, chat_history, decision)
 
-    def apply_guard(self, state: dict[str, Any]) -> dict[str, Any]:
+    def apply_guard(self, state: dict[str, Any], config: dict | None = None) -> dict[str, Any]:
+        self._check_cancellation(config)
         decision = llm_complete(
             build_guard_prompt(
                 domain_label=self.domain_label or self.domain,
@@ -83,7 +88,8 @@ class BaseSkill(ABC):
             "table_schema": build_schema_excerpt(self._schema_tables(primary_table, plan.tables)),
         }
 
-    def apply_write_sql(self, state: dict[str, Any]) -> dict[str, Any]:
+    def apply_write_sql(self, state: dict[str, Any], config: dict | None = None) -> dict[str, Any]:
+        self._check_cancellation(config)
         history_list = state.get("chat_history", [])
         history_text = "\n".join(history_list) if history_list else ""
         effective_question = state.get("normalized_question") or state["question"]
@@ -108,7 +114,8 @@ class BaseSkill(ABC):
             "retry_count": state.get("retry_count") or 0,
         }
 
-    def apply_execute_sql(self, state: dict[str, Any]) -> dict[str, Any]:
+    def apply_execute_sql(self, state: dict[str, Any], config: dict | None = None) -> dict[str, Any]:
+        self._check_cancellation(config)
         return execute_sql(
             state.get("sql_query", ""),
             question=state.get("normalized_question") or state["question"],
@@ -117,7 +124,8 @@ class BaseSkill(ABC):
             allowed_tables=self._allowed_tables(),
         )
 
-    def apply_reflect_sql(self, state: dict[str, Any]) -> dict[str, Any]:
+    def apply_reflect_sql(self, state: dict[str, Any], config: dict | None = None) -> dict[str, Any]:
+        self._check_cancellation(config)
         prompt = build_reflect_sql_prompt(
             domain_label=self.domain_label or self.domain,
             field_conventions=self.field_conventions,
@@ -140,7 +148,7 @@ class BaseSkill(ABC):
             "sql_error": "",
         }
 
-    def apply_generate_answer(self, state: dict[str, Any]) -> dict[str, Any]:
+    def apply_generate_answer(self, state: dict[str, Any], config: dict | None = None) -> dict[str, Any]:
         if state.get("intent") == "REJECT":
             answer = "抱歉，我仅支持企业业务数据相关的查询与分析。请改用生产、库存、计划、需求或经营数据问题继续提问。"
             return {
@@ -152,6 +160,7 @@ class BaseSkill(ABC):
                 "truncated": bool(state.get("truncated")),
                 "chat_history": [f"问: {state['question']}\n答: {answer}"],
             }
+        self._check_cancellation(config)
         return build_answer_payload(
             question=state["question"],
             sql_query=state.get("sql_query", ""),

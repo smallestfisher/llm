@@ -8,7 +8,7 @@ from app.skills.generic import GenericSkill
 from app.skills.inventory import InventorySkill
 from app.skills.planning import PlanningSkill
 from app.skills.production import ProductionSkill
-from app.skills.sales import SalesSkill
+from app.workflow.state import RouteDecision, SkillExecution, CancelledError
 
 
 _COMPOSER = CrossDomainComposer()
@@ -26,14 +26,21 @@ class CompiledOrchestratedWorkflow:
     def __init__(self, checkpointer=None):
         self.checkpointer = checkpointer
 
+    def _check_cancellation(self, config: dict | None) -> None:
+        if config and config.get("is_cancelled") and config["is_cancelled"]():
+            raise CancelledError("Workflow cancelled")
+
     async def astream(self, inputs: dict, config: dict | None = None):
+        self._check_cancellation(config)
         question = (inputs.get("question") or "").strip()
         chat_history = list(inputs.get("chat_history") or [])
         decision = route_question(question)
 
         yield {"route_intent": decision.to_state_update()}
+        self._check_cancellation(config)
 
         if decision.route == "legacy":
+
             generic_decision = RouteDecision(
                 route="general",
                 confidence=decision.confidence,
@@ -53,6 +60,7 @@ class CompiledOrchestratedWorkflow:
                 decision=generic_decision,
                 result_holder={},
                 emit_final_node=True,
+                config=config,
             ):
                 yield output
             return
@@ -150,6 +158,7 @@ class CompiledOrchestratedWorkflow:
                 decision=generic_decision,
                 result_holder={},
                 emit_final_node=True,
+                config=config,
             ):
                 yield output
             return
@@ -185,7 +194,9 @@ class CompiledOrchestratedWorkflow:
         result_holder: dict,
         emit_final_node: bool,
         dispatch_update: dict | None = None,
+        config: dict | None = None,
     ):
+        self._check_cancellation(config)
         yield {"skill_dispatch": dispatch_update or plan.to_state_update()}
         yield {plan.node_name: {"active_skill": plan.skill_name, "skill_tables": plan.tables}}
 
@@ -195,15 +206,17 @@ class CompiledOrchestratedWorkflow:
             decision=decision,
         )
 
+        self._check_cancellation(config)
         yield {"check_guard": {}}
-        guard_update = skill.apply_guard(state)
+        guard_update = skill.apply_guard(state, config=config)
         state.update(guard_update)
         yield {"check_guard": guard_update}
 
         if state.get("intent") == "REJECT":
             if emit_final_node:
                 yield {"generate_answer": {}}
-            final_update = skill.apply_generate_answer(state)
+            self._check_cancellation(config)
+            final_update = skill.apply_generate_answer(state, config=config)
             state.update(final_update)
             result = skill.build_result(state)
             yield {plan.node_name: result.to_skill_update()}
@@ -213,36 +226,43 @@ class CompiledOrchestratedWorkflow:
             result_holder["result"] = result
             return
 
+        self._check_cancellation(config)
         yield {"refine_filters": {}}
         refine_update = skill.apply_refine_filters(state)
         state.update(refine_update)
         yield {"refine_filters": refine_update}
 
+        self._check_cancellation(config)
         yield {"get_schema": {}}
         schema_update = skill.apply_schema(state, question=question, plan=plan)
         state.update(schema_update)
         yield {"get_schema": schema_update}
 
+        self._check_cancellation(config)
         yield {"write_sql": {}}
-        write_update = skill.apply_write_sql(state)
+        write_update = skill.apply_write_sql(state, config=config)
         state.update(write_update)
         yield {"write_sql": write_update}
 
         while True:
+            self._check_cancellation(config)
             yield {"execute_sql": {}}
-            execute_update = skill.apply_execute_sql(state)
+            execute_update = skill.apply_execute_sql(state, config=config)
             state.update(execute_update)
             yield {"execute_sql": execute_update}
             if not state.get("sql_error") or (state.get("retry_count") or 0) >= 3:
                 break
+            
+            self._check_cancellation(config)
             yield {"reflect_sql": {}}
-            reflect_update = skill.apply_reflect_sql(state)
+            reflect_update = skill.apply_reflect_sql(state, config=config)
             state.update(reflect_update)
             yield {"reflect_sql": reflect_update}
 
+        self._check_cancellation(config)
         if emit_final_node:
             yield {"generate_answer": {}}
-        final_update = skill.apply_generate_answer(state)
+        final_update = skill.apply_generate_answer(state, config=config)
         state.update(final_update)
         result = skill.build_result(state)
         yield {plan.node_name: result.to_skill_update()}

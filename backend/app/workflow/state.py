@@ -87,3 +87,8 @@ class SkillExecution:
     domain: str
     plan: SkillPlan
     result: SkillResult
+
+
+class CancelledError(Exception):
+    """Raised when the workflow run is cancelled."""
+    pass

@@ -31,7 +31,7 @@ const QUICK_SUGGESTIONS = [
 ]
 
 const VIEW_OPTIONS: Array<{ key: View; label: string; adminOnly?: boolean }> = [
-  { key: 'chat', label: '聊天' },
+  { key: 'chat', label: '智能问答' },
   { key: 'profile', label: '个人设置' },
   { key: 'admin-users', label: '用户管理', adminOnly: true },
   { key: 'admin-audits', label: '审计日志', adminOnly: true },
@@ -92,7 +92,7 @@ function renderQuickSuggestions(onPickQuickSuggestion: (value: string) => void) 
   return (
     <div className="quick-suggestions">
       {QUICK_SUGGESTIONS.map((item) => (
-        <button key={item} className="ghost-button" type="button" onClick={() => onPickQuickSuggestion(item)}>
+        <button key={item} className="suggestion-chip" type="button" onClick={() => onPickQuickSuggestion(item)}>
           {item}
         </button>
       ))}
@@ -102,39 +102,44 @@ function renderQuickSuggestions(onPickQuickSuggestion: (value: string) => void) 
 
 function renderEmptyThread(onPickQuickSuggestion: (value: string) => void) {
   return (
-    <section className="panel empty-thread">
-      <h2>开始一段新对话</h2>
-      <p>先从一个业务问题开始。你可以直接发送问题，或点击下面的建议问题。</p>
+    <div className="data-card" style={{ margin: '4rem auto', maxWidth: '600px', textAlign: 'center' }}>
+      <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>开始一段新对话</h2>
+      <p style={{ color: '#64748b', marginBottom: '2rem' }}>
+        您可以直接发送业务问题，例如查询生产、库存、计划等实时数据。
+      </p>
       {renderQuickSuggestions(onPickQuickSuggestion)}
-    </section>
+    </div>
   )
 }
 
 function renderRunInspector(activeRun: ReturnType<typeof getActiveRun>): ReactNode {
   if (!activeRun) return null
   return (
-    <details className="run-inspector">
-      <summary>查看当前运行详情</summary>
-      <div className="run-inspector-grid">
-        <div>
-          <strong>状态</strong>
-          <span>{activeRun.status}</span>
-        </div>
-        <div>
-          <strong>步骤</strong>
-          <span>{activeRun.current_step}</span>
-        </div>
-        <div>
-          <strong>路由</strong>
-          <span>{activeRun.route || '-'}</span>
-        </div>
-        <div>
-          <strong>原因</strong>
-          <span>{activeRun.route_reason || '-'}</span>
-        </div>
+    <details className="sql-block" style={{ border: '1px solid var(--border-color)', background: 'white' }}>
+      <summary style={{ padding: '0.75rem 1rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500 }}>
+        查看运行详情 (内部参数)
+      </summary>
+      <div style={{ padding: '1rem', background: '#f8fafc', borderTop: '1px solid var(--border-color)', display: 'grid', gap: '0.5rem', fontSize: '0.8125rem' }}>
+        <div><strong>Run ID:</strong> {activeRun.public_id}</div>
+        <div><strong>Status:</strong> {activeRun.status}</div>
+        <div><strong>Current Step:</strong> {activeRun.current_step}</div>
+        {activeRun.route && <div><strong>Route:</strong> {activeRun.route}</div>}
+        {activeRun.route_reason && <div><strong>Reason:</strong> {activeRun.route_reason}</div>}
+        {activeRun.sql_query && (
+           <div style={{ marginTop: '0.5rem' }}>
+             <strong>SQL Query:</strong>
+             <pre style={{ margin: '0.5rem 0', padding: '0.75rem', background: '#0f172a', color: '#e2e8f0', borderRadius: '0.5rem', overflow: 'auto' }}>
+               {activeRun.sql_query}
+             </pre>
+           </div>
+        )}
+        {activeRun.error_message && (
+          <div style={{ color: '#dc2626' }}>
+            <strong>Error:</strong>
+            <pre style={{ whiteSpace: 'pre-wrap' }}>{activeRun.error_message}</pre>
+          </div>
+        )}
       </div>
-      {activeRun.sql_query ? <pre className="run-inspector-pre">{activeRun.sql_query}</pre> : null}
-      {activeRun.error_message ? <pre className="run-inspector-pre error-pre">{activeRun.error_message}</pre> : null}
     </details>
   )
 }
@@ -151,7 +156,7 @@ function renderTimeline(
     return renderEmptyThread(onPickQuickSuggestion)
   }
   return (
-    <div className="message-list">
+    <>
       {messages.map((message) => (
         <MessageCard
           key={message.id}
@@ -161,7 +166,7 @@ function renderTimeline(
           onRegenerate={onRegenerate}
         />
       ))}
-    </div>
+    </>
   )
 }
 
@@ -194,7 +199,7 @@ export function App() {
   const hasRunningRun = useMemo(() => getHasRunningRun(activeRun), [activeRun])
   const activeThreadTitle = activeThread?.title || '新对话'
   const canSend = Boolean(!busy && !runBusy && activeThreadId)
-  const composerHint = hasRunningRun ? '当前有运行中的任务，可停止后继续操作。' : '输入业务问题，重构版将逐步接入完整工作流。'
+  const composerHint = hasRunningRun ? '任务运行中，您可以选择停止运行。' : '输入业务数据查询问题...'
 
   useEffect(() => {
     const stored = readSession()
@@ -491,16 +496,25 @@ export function App() {
   if (!session) {
     return (
       <div className="auth-shell">
-        <form className="panel auth-panel" onSubmit={handleAuthSubmit}>
-          <h1>BOE Data Copilot</h1>
-          <p>{mode === 'login' ? '登录到重构版工作台' : '注册重构版账号'}</p>
-          <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="用户名" />
-          <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="密码" />
-          {error ? <div className="error-text">{error}</div> : null}
-          <button type="submit" disabled={busy}>{busy ? '处理中...' : mode === 'login' ? '登录' : '注册'}</button>
-          <button type="button" className="ghost-button" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
-            {mode === 'login' ? '切换到注册' : '切换到登录'}
-          </button>
+        <form className="auth-panel" onSubmit={handleAuthSubmit}>
+          <h2>BOE Data Copilot</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="用户名" />
+            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="密码" />
+          </div>
+          {error ? <div className="error-text" style={{ fontSize: '0.875rem' }}>{error}</div> : null}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              {busy ? '处理中...' : mode === 'login' ? '登录' : '注册'}
+            </button>
+            <button 
+              type="button" 
+              className="btn btn-ghost" 
+              onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+            >
+              {mode === 'login' ? '创建账号' : '已有账号？去登录'}
+            </button>
+          </div>
         </form>
       </div>
     )
@@ -510,23 +524,33 @@ export function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-head">
-          <div>
-            <h1>BOE Data Copilot</h1>
-            <p>{session.username}</p>
+          <h1 style={{ fontSize: '1.25rem', margin: 0, fontWeight: 700 }}>BOE Data Copilot</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#94a3b8', fontSize: '0.875rem' }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e' }}></div>
+            {session.username}
           </div>
-          <button onClick={handleCreateThread} disabled={busy || runBusy}>新建对话</button>
         </div>
+
+        <div className="nav-list">
+          <button className="btn btn-primary" onClick={handleCreateThread} disabled={busy || runBusy}>
+            + 新建对话
+          </button>
+        </div>
+
+        <h3>功能菜单</h3>
         <nav className="nav-list">
           {VIEW_OPTIONS.filter((option) => !option.adminOnly || isAdmin).map((option) => (
             <button
               key={option.key}
-              className={`ghost-button ${view === option.key ? 'active-nav' : ''}`}
+              className={`nav-item ${view === option.key ? 'active' : ''}`}
               onClick={() => setView(option.key)}
             >
               {option.label}
             </button>
           ))}
         </nav>
+
+        <h3>最近会话</h3>
         <ThreadList
           threads={threads}
           activeThreadId={activeThreadId}
@@ -534,35 +558,49 @@ export function App() {
           onSelect={handleSelectThread}
           onDelete={handleDeleteThread}
         />
-        <button className="ghost-button" onClick={handleLogout}>退出登录</button>
+
+        <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <button className="nav-item" onClick={handleLogout}>
+            退出登录
+          </button>
+        </div>
       </aside>
+
       <main className="main-panel">
-        {error ? <div className="panel error-text">{error}</div> : null}
+        {error && (
+          <div style={{ padding: '1rem 2rem', background: '#fef2f2', borderBottom: '1px solid #fee2e2', color: '#dc2626', fontSize: '0.875rem' }}>
+            系统提示：{error}
+          </div>
+        )}
+
         {view === 'chat' ? (
-          <>
-            <RunPanel
-              activeRun={activeRun}
-              busy={busy}
-              activeRunDetail={activeRunDetail}
-              runSteps={runSteps}
-              hasRunningRun={hasRunningRun}
-              onCancel={handleCancelRun}
-            />
-            <ChatPanel
-              activeThreadTitle={activeThreadTitle}
-              activeThread={activeThread}
-              busy={busy || runBusy || isPolling}
-              activeRun={activeRun}
-              renderMainTimeline={() => renderTimeline(activeThread, latestAssistantMessages, busy || runBusy, handleRegenerate, setQuestion)}
-              renderRunInspector={() => renderRunInspector(activeRun)}
-              renderComposerHint={composerHint}
-              question={question}
-              onQuestionChange={setQuestion}
-              onSend={handleSendMessage}
-              canSend={canSend}
-            />
-          </>
+          <ChatPanel
+            activeThreadTitle={activeThreadTitle}
+            activeThread={activeThread}
+            busy={busy || runBusy || isPolling}
+            activeRun={activeRun}
+            renderMainTimeline={() => renderTimeline(activeThread, latestAssistantMessages, busy || runBusy, handleRegenerate, setQuestion)}
+            renderRunInspector={() => (
+              <>
+                <RunPanel
+                  activeRun={activeRun}
+                  busy={busy}
+                  activeRunDetail={activeRunDetail}
+                  runSteps={runSteps}
+                  hasRunningRun={hasRunningRun}
+                  onCancel={handleCancelRun}
+                />
+                {renderRunInspector(activeRun)}
+              </>
+            )}
+            renderComposerHint={composerHint}
+            question={question}
+            onQuestionChange={setQuestion}
+            onSend={handleSendMessage}
+            canSend={canSend}
+          />
         ) : null}
+
         {view === 'profile' ? (
           <ProfilePanel
             currentPassword={profileCurrentPassword}
@@ -573,6 +611,7 @@ export function App() {
             onSubmit={handleChangePassword}
           />
         ) : null}
+
         {view === 'admin-users' && isAdmin ? (
           <AdminUsersPanel
             adminUsers={adminUsers}
@@ -584,6 +623,7 @@ export function App() {
             onResetPassword={handleResetUserPassword}
           />
         ) : null}
+
         {view === 'admin-audits' && isAdmin ? <AuditPanel audits={audits} /> : null}
       </main>
     </div>

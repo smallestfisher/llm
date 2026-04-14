@@ -11,6 +11,7 @@ from app.models import Run, Thread, Turn, utcnow
 from app.services.chat_service import ChatService
 from app.services.run_service import ACTIVE_RUN_STATUSES, RunService
 from app.workflow.executor import execute_chat_workflow
+from app.workflow.state import CancelledError
 
 logger = logging.getLogger(__name__)
 BACKGROUND_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="chat-run")
@@ -87,7 +88,16 @@ class ChatExecutionService:
             self.run_service.update_run_progress(db, run, current_step="workflow")
             thread.updated_at = utcnow()
             db.commit()
-            workflow_result = asyncio.run(execute_chat_workflow(question, history))
+
+            def is_cancelled() -> bool:
+                check_db = SessionLocal()
+                try:
+                    r = check_db.query(Run).filter(Run.public_id == run_id).first()
+                    return self.run_service.is_cancel_requested(r) if r else False
+                finally:
+                    check_db.close()
+
+            workflow_result = asyncio.run(execute_chat_workflow(question, history, is_cancelled=is_cancelled))
             db.refresh(run)
             db.refresh(turn)
             db.refresh(thread)
@@ -117,6 +127,18 @@ class ChatExecutionService:
                 self.run_service.complete_run(db, run, turn, answer, metadata)
             thread.updated_at = utcnow()
             db.commit()
+        except CancelledError:
+            db.rollback()
+            logger.info("run workflow cancelled", extra={"thread_id": thread_id, "run_id": run_id})
+            recovery = SessionLocal()
+            try:
+                run = recovery.query(Run).filter(Run.public_id == run_id, Run.thread_id == thread_id).first()
+                turn = recovery.query(Turn).filter(Turn.id == turn_id, Turn.thread_id == thread_id).first()
+                if run and turn:
+                    self.run_service.cancel_run(recovery, run, turn)
+                    recovery.commit()
+            finally:
+                recovery.close()
         except Exception as exc:
             db.rollback()
             logger.exception("run workflow failed", extra={"thread_id": thread_id, "turn_id": turn_id, "run_id": run_id})
