@@ -1,5 +1,7 @@
 # Workflow Layer
 
-This layer will host the rewritten routing, skill orchestration, SQL safety, and execution pipeline for the architecture rewrite.
+This layer now owns the rewritten routing, orchestration, cross-domain
+composition, chat-history shaping, and workflow execution entrypoints.
 
-It will reuse the semantics of the current system while moving them behind cleaner service boundaries.
+It still uses `core/config/tables.json` as the schema source of truth, while the
+runtime logic itself lives under `backend/app`.

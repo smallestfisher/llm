@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from core.router.filter_extractor import extract_shared_filters
 from core.registry.tables import explicit_table_hits, get_tables_for_domain
 from core.runtime.skill_runtime import llm_complete
 from core.runtime.state import RouteDecision
 from core.skills.prompting import build_route_decision_prompt
+
+
+logger = logging.getLogger(__name__)
 
 
 _DOMAIN_KEYWORDS = {
@@ -179,7 +183,11 @@ def _llm_route_question(question: str, shared_filters: dict, explicit_hits: list
         explicit_hits=explicit_hits,
         scored_domains=[(domain, score) for domain, score, _ in scored],
     )
-    raw = llm_complete(prompt)
+    try:
+        raw = llm_complete(prompt)
+    except Exception:
+        logger.exception("llm router fallback failed")
+        return None
     try:
         payload = json.loads(raw)
     except Exception:

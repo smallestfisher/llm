@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Run, Thread, Turn
 from app.workflow.filters import extract_shared_filters
+from app.workflow.history import build_history_from_messages
 from app.workflow.router import decide_route
 
 
@@ -27,13 +28,14 @@ class ChatService:
         return snapshot
 
     def build_thread_history(self, db: Session, thread: Thread) -> list[str]:
-        history: list[str] = []
         turns = db.query(Turn).filter(Turn.thread_id == thread.id).order_by(Turn.sequence.asc()).all()
+        messages: list[object] = []
         for turn in turns:
-            if not turn.user_message or not turn.latest_assistant_message:
-                continue
-            history.append(f"问: {turn.user_message.content}\n答: {turn.latest_assistant_message.content}")
-        return history
+            if turn.user_message:
+                messages.append(turn.user_message)
+            if turn.latest_assistant_message:
+                messages.append(turn.latest_assistant_message)
+        return build_history_from_messages(messages)
 
     def shared_filters(self, question: str) -> dict:
         return extract_shared_filters(question)
