@@ -499,7 +499,8 @@ export function App() {
         <div className="auth-card">
           <div className="auth-header">
             <div className="auth-logo">B</div>
-            <h1>BOE Data Copilot</h1>
+            <h1 style={{ marginBottom: '0.5rem' }}>BOE Data Copilot</h1>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>制造业数据智能专家</p>
           </div>
 
           <div className="auth-tabs">
@@ -518,7 +519,7 @@ export function App() {
           </div>
 
           <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            <div className="input-group">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <input 
                 type="text"
                 value={username} 
@@ -539,13 +540,13 @@ export function App() {
             
             {error && <div className="error-bubble">{error}</div>}
 
-            <button type="submit" className="btn-submit" disabled={busy}>
+            <button type="submit" className="btn-primary" disabled={busy}>
               {busy ? '正在处理...' : mode === 'login' ? '立即登录' : '创建账号'}
             </button>
           </form>
 
-          <div style={{ textAlign: 'center', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-            {mode === 'login' ? '初次使用？请切换至注册' : '已有账号？请切换至登录'}
+          <div style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            {mode === 'login' ? '欢迎回来，请登录您的工作台' : '新用户请先注册账号'}
           </div>
         </div>
       </div>
@@ -557,13 +558,13 @@ export function App() {
       <aside className="sidebar">
         <div className="sidebar-brand">
           <div className="brand-logo">B</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>Data Copilot</span>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-desc)', fontWeight: 500 }}>{session.username}</span>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#fff' }}>Data Copilot</span>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{session.username}</span>
           </div>
         </div>
 
-        <button className="btn-create" onClick={handleCreateThread} disabled={busy || runBusy}>
+        <button className="btn-primary" onClick={handleCreateThread} disabled={busy || runBusy} style={{ margin: '0 0.75rem 1.5rem', borderRadius: '14px', padding: '0.75rem' }}>
           + 新建对话
         </button>
 
@@ -579,7 +580,7 @@ export function App() {
           ))}
         </nav>
 
-        <h3>历史记录</h3>
+        <h3>历史会话</h3>
         <div className="thread-list">
           <ThreadList
             threads={threads}
@@ -590,8 +591,8 @@ export function App() {
           />
         </div>
 
-        <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid var(--border-subtle)' }}>
-          <button className="nav-item" onClick={handleLogout} style={{ color: '#ef4444', opacity: 0.8 }}>
+        <div style={{ marginTop: 'auto', paddingTop: '1.5rem', borderTop: '1px solid var(--border-subtle)' }}>
+          <button className="nav-item" onClick={handleLogout} style={{ color: '#ef4444' }}>
             退出登录
           </button>
         </div>
@@ -599,7 +600,7 @@ export function App() {
 
       <main className="main-panel">
         {error && (
-          <div style={{ position: 'absolute', top: '80px', left: '50%', transform: 'translateX(-50%)', zIndex: 100, background: 'rgba(239, 68, 68, 0.9)', backdropFilter: 'blur(10px)', color: '#fff', padding: '0.6rem 1.25rem', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 600, boxShadow: '0 20px 40px rgba(0,0,0,0.4)' }}>
+          <div style={{ position: 'absolute', top: '80px', left: '50%', transform: 'translateX(-50%)', zIndex: 100, background: 'rgba(239, 68, 68, 0.9)', backdropFilter: 'blur(10px)', color: '#fff', padding: '0.6rem 1.25rem', borderRadius: '12px', fontSize: '0.85rem', boxShadow: '0 20px 40px rgba(0,0,0,0.4)' }}>
             {error}
           </div>
         )}
