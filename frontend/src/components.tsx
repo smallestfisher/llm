@@ -200,7 +200,7 @@ export function AdminUsersPanel({ adminUsers, busy, drafts, onDraftChange, onTog
             <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
               <button 
                 className="btn-ghost" 
-                style={{ flex: 1, padding: '0.6rem', fontSize: '0.75rem', borderColor: user.is_active ? 'rgba(239, 68, 68, 0.2)' : 'var(--border-subtle)' }} 
+                style={{ flex: 1, padding: '0.6rem', fontSize: '0.75rem' }} 
                 onClick={() => onToggleUser(user)}
               >
                 {user.is_active ? '禁用账号' : '激活账号'}
