@@ -5,12 +5,12 @@ from sqlalchemy.orm import Session
 from app.models import Run, Thread, Turn
 from app.semantic.filters import extract_shared_filters
 from app.workflow.history import build_history_from_messages
-from app.workflow.router import decide_route
+from app.workflow.router import route_question
 
 
 class ChatService:
     def build_route_snapshot(self, question: str) -> dict:
-        decision = decide_route(question)
+        decision = route_question(question)
         return {
             "route": decision.route,
             "confidence": decision.confidence,
