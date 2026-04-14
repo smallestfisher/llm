@@ -1,4 +1,4 @@
-import type { FormEvent, ReactNode } from 'react'
+import { useEffect, useRef, type FormEvent, type ReactNode } from 'react'
 import type { AuditRow, MessageRow, RunRow, ThreadDetail, ThreadSummary, UserRow } from './api'
 import { formatDisplayDate } from './view-models'
 
@@ -97,8 +97,21 @@ export function ChatPanel({
   onSend,
   canSend,
 }: ChatPanelProps) {
+  const messageListRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const container = messageListRef.current
+    if (!container) return
+
+    const frameId = window.requestAnimationFrame(() => {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [activeThread?.public_id, activeThread?.messages?.length, showThinking])
+
   return (
-    <main className="main-panel">
+    <div className="chat-panel-shell">
       <header className="chat-header">
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
           <h2 style={{ fontSize: '1rem', fontWeight: 700 }}>{activeThreadTitle || '新建对话'}</h2>
@@ -109,7 +122,7 @@ export function ChatPanel({
         </div>
       </header>
 
-      <div className="message-list">
+      <div ref={messageListRef} className="message-list">
         {renderMainTimeline()}
         {renderRunInspector()}
         {showThinking && (
@@ -144,7 +157,7 @@ export function ChatPanel({
           </form>
         </div>
       </div>
-    </main>
+    </div>
   )
 }
 
@@ -342,7 +355,7 @@ export function MessageCard({ message, busy, canRegenerate, onRegenerate }: Mess
           )}
           {message.role === 'assistant' && canRegenerate && (
             <button 
-              className="btn-ghost" 
+              className="btn-ghost message-regenerate" 
               style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }} 
               onClick={() => onRegenerate(message.id)} 
               disabled={busy}

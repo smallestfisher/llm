@@ -186,6 +186,7 @@ export function App() {
   const [question, setQuestion] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [isBootstrappingSession, setIsBootstrappingSession] = useState(false)
   const [runBusy, setRunBusy] = useState(false)
   const [isPolling, setIsPolling] = useState(false)
   const [profileCurrentPassword, setProfileCurrentPassword] = useState('')
@@ -202,7 +203,7 @@ export function App() {
   const activeRunDetail = useMemo(() => getActiveRunDetail(activeRun), [activeRun])
   const hasRunningRun = useMemo(() => getHasRunningRun(activeRun), [activeRun])
   const activeThreadTitle = activeThread?.title || '新对话'
-  const hasResolvedThread = Boolean(activeThreadId ? activeThread : threads.length === 0)
+  const hasResolvedThread = !isBootstrappingSession && Boolean(activeThreadId ? activeThread : threads.length === 0)
   const canSend = Boolean(!busy && !runBusy && activeThreadId)
   const isChatLoading = runBusy || isPolling || hasRunningRun
   const composerHint = hasRunningRun ? '任务运行中，您可以选择停止运行。' : '输入业务数据查询问题...'
@@ -243,6 +244,7 @@ export function App() {
   }
 
   async function bootstrapSession(token: string) {
+    setIsBootstrappingSession(true)
     setBusy(true)
     setError('')
     try {
@@ -262,6 +264,7 @@ export function App() {
       setError(message)
       handleLogout()
     } finally {
+      setIsBootstrappingSession(false)
       setBusy(false)
     }
   }
