@@ -102,10 +102,11 @@ function renderQuickSuggestions(onPickQuickSuggestion: (value: string) => void) 
 
 function renderEmptyThread(onPickQuickSuggestion: (value: string) => void) {
   return (
-    <div className="data-card" style={{ margin: '4rem auto', maxWidth: '600px', textAlign: 'center' }}>
-      <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>开始一段新对话</h2>
-      <p style={{ color: '#64748b', marginBottom: '2rem' }}>
-        您可以直接发送业务问题，例如查询生产、库存、计划等实时数据。
+    <div className="embedded-card" style={{ margin: '4rem auto', maxWidth: '640px', textAlign: 'center', padding: '4rem 2rem', background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(20px)' }}>
+      <div className="auth-logo" style={{ width: '64px', height: '64px', fontSize: '1.8rem', marginBottom: '2rem' }}>B</div>
+      <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '1rem', letterSpacing: '-0.03em' }}>开启业务探索</h2>
+      <p style={{ color: 'var(--text-secondary)', marginBottom: '2.5rem', lineHeight: 1.6 }}>
+        我是您的制造业数据助手。您可以直接查询生产、库存、计划等实时指标，或进行复杂的多维分析。
       </p>
       {renderQuickSuggestions(onPickQuickSuggestion)}
     </div>
@@ -115,28 +116,27 @@ function renderEmptyThread(onPickQuickSuggestion: (value: string) => void) {
 function renderRunInspector(activeRun: ReturnType<typeof getActiveRun>): ReactNode {
   if (!activeRun) return null
   return (
-    <details className="sql-block" style={{ border: '1px solid var(--border-color)', background: 'white' }}>
-      <summary style={{ padding: '0.75rem 1rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500 }}>
-        查看运行详情 (内部参数)
+    <details className="embedded-card" style={{ background: 'rgba(255,255,255,0.2)' }}>
+      <summary style={{ padding: '0.75rem 1.25rem', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        Debug Inspector
       </summary>
-      <div style={{ padding: '1rem', background: '#f8fafc', borderTop: '1px solid var(--border-color)', display: 'grid', gap: '0.5rem', fontSize: '0.8125rem' }}>
-        <div><strong>Run ID:</strong> {activeRun.public_id}</div>
-        <div><strong>Status:</strong> {activeRun.status}</div>
-        <div><strong>Current Step:</strong> {activeRun.current_step}</div>
-        {activeRun.route && <div><strong>Route:</strong> {activeRun.route}</div>}
-        {activeRun.route_reason && <div><strong>Reason:</strong> {activeRun.route_reason}</div>}
+      <div style={{ padding: '1.25rem', borderTop: '1px solid var(--border-subtle)', display: 'grid', gap: '0.75rem', fontSize: '0.8rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>Run ID</strong> <span style={{ fontFamily: 'monospace' }}>{activeRun.public_id}</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>Status</strong> <span className="status-pill active">{activeRun.status}</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>Step</strong> <span style={{ color: 'var(--primary-color)', fontWeight: 600 }}>{activeRun.current_step}</span></div>
+        {activeRun.route && <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>Route</strong> <span>{activeRun.route}</span></div>}
         {activeRun.sql_query && (
            <div style={{ marginTop: '0.5rem' }}>
-             <strong>SQL Query:</strong>
-             <pre style={{ margin: '0.5rem 0', padding: '0.75rem', background: '#0f172a', color: '#e2e8f0', borderRadius: '0.5rem', overflow: 'auto' }}>
+             <strong style={{ display: 'block', marginBottom: '0.5rem' }}>SQL Query</strong>
+             <pre style={{ margin: 0, padding: '1rem', background: '#f2f2f7', color: '#444', borderRadius: '10px', overflow: 'auto', fontSize: '0.75rem' }}>
                {activeRun.sql_query}
              </pre>
            </div>
         )}
         {activeRun.error_message && (
-          <div style={{ color: '#dc2626' }}>
-            <strong>Error:</strong>
-            <pre style={{ whiteSpace: 'pre-wrap' }}>{activeRun.error_message}</pre>
+          <div style={{ color: '#ff3b30', marginTop: '0.5rem' }}>
+            <strong>Error Message</strong>
+            <pre style={{ whiteSpace: 'pre-wrap', marginTop: '0.5rem', background: '#fff2f2', padding: '1rem', borderRadius: '10px' }}>{activeRun.error_message}</pre>
           </div>
         )}
       </div>
@@ -499,8 +499,8 @@ export function App() {
         <div className="auth-card">
           <div className="auth-header">
             <div className="auth-logo">B</div>
-            <h1 style={{ marginBottom: '0.5rem' }}>BOE Data Copilot</h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>制造业数据智能专家</p>
+            <h1 style={{ marginBottom: '0.5rem', fontSize: '1.75rem', fontWeight: 800 }}>BOE Data Copilot</h1>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>专业制造业数据问答平台</p>
           </div>
 
           <div className="auth-tabs">
@@ -541,12 +541,12 @@ export function App() {
             {error && <div className="error-bubble">{error}</div>}
 
             <button type="submit" className="btn-primary" disabled={busy}>
-              {busy ? '正在处理...' : mode === 'login' ? '立即登录' : '创建账号'}
+              {busy ? '正在同步...' : mode === 'login' ? '立即登录' : '创建账号'}
             </button>
           </form>
 
           <div style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            {mode === 'login' ? '欢迎回来，请登录您的工作台' : '新用户请先注册账号'}
+            {mode === 'login' ? '欢迎回来，请登录您的工作台' : '新用户请完成系统注册'}
           </div>
         </div>
       </div>
@@ -555,32 +555,32 @@ export function App() {
 
   return (
     <div className="app-shell">
+      <aside className="slim-rail">
+        <div className={`rail-item ${view === 'chat' ? 'active' : ''}`} title="问答" onClick={() => setView('chat')}>💬</div>
+        <div className={`rail-item ${view === 'profile' ? 'active' : ''}`} title="设置" onClick={() => setView('profile')}>⚙️</div>
+        {isAdmin && (
+          <>
+            <div className={`rail-item ${view === 'admin-users' ? 'active' : ''}`} title="管理" onClick={() => setView('admin-users')}>👥</div>
+            <div className={`rail-item ${view === 'admin-audits' ? 'active' : ''}`} title="审计" onClick={() => setView('admin-audits')}>📋</div>
+          </>
+        )}
+        <div style={{ marginTop: 'auto' }} className="rail-item" title="退出" onClick={handleLogout}>🚪</div>
+      </aside>
+
       <aside className="sidebar">
         <div className="sidebar-brand">
           <div className="brand-logo">B</div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#fff' }}>Data Copilot</span>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{session.username}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{ fontSize: '0.9rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Data Copilot</span>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-desc)', fontWeight: 500 }}>{session.username}</span>
           </div>
         </div>
 
-        <button className="btn-primary" onClick={handleCreateThread} disabled={busy || runBusy} style={{ margin: '0 0.75rem 1.5rem', borderRadius: '14px', padding: '0.75rem' }}>
-          + 新建对话
+        <button className="btn-create" onClick={handleCreateThread} disabled={busy || runBusy}>
+          + 新建会话
         </button>
 
-        <nav>
-          {VIEW_OPTIONS.filter((option) => !option.adminOnly || isAdmin).map((option) => (
-            <button
-              key={option.key}
-              className={`nav-item ${view === option.key ? 'active' : ''}`}
-              onClick={() => setView(option.key)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </nav>
-
-        <h3>历史会话</h3>
+        <h3>最近会话</h3>
         <div className="thread-list">
           <ThreadList
             threads={threads}
@@ -590,18 +590,14 @@ export function App() {
             onDelete={handleDeleteThread}
           />
         </div>
-
-        <div style={{ marginTop: 'auto', paddingTop: '1.5rem', borderTop: '1px solid var(--border-subtle)' }}>
-          <button className="nav-item" onClick={handleLogout} style={{ color: '#ef4444' }}>
-            退出登录
-          </button>
-        </div>
       </aside>
 
       <main className="main-panel">
         {error && (
-          <div style={{ position: 'absolute', top: '80px', left: '50%', transform: 'translateX(-50%)', zIndex: 100, background: 'rgba(239, 68, 68, 0.9)', backdropFilter: 'blur(10px)', color: '#fff', padding: '0.6rem 1.25rem', borderRadius: '12px', fontSize: '0.85rem', boxShadow: '0 20px 40px rgba(0,0,0,0.4)' }}>
-            {error}
+          <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 100 }}>
+            <div className="error-bubble" style={{ boxShadow: '0 10px 30px rgba(220, 38, 38, 0.1)' }}>
+              {error}
+            </div>
           </div>
         )}
 

@@ -13,17 +13,18 @@ export function ThreadList({ threads, activeThreadId, busy, onSelect, onDelete }
   return (
     <div className="thread-list">
       {threads.map((thread) => (
-        <div key={thread.public_id} className="thread-row">
+        <div key={thread.public_id} className="thread-row" style={{ position: 'relative' }}>
           <button 
             className={`thread-item ${thread.public_id === activeThreadId ? 'active' : ''}`} 
             onClick={() => onSelect(thread.public_id)}
           >
-            {thread.title || '未命名会话'}
+            {thread.title || '新会话'}
           </button>
           <button 
             className="thread-delete" 
             disabled={busy} 
             onClick={() => onDelete(thread.public_id)}
+            style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', opacity: 0.4, border: 'none', background: 'transparent', cursor: 'pointer' }}
           >
             ✕
           </button>
@@ -45,7 +46,7 @@ type RunPanelProps = {
 export function RunPanel({ activeRun, busy, runSteps, hasRunningRun, onCancel }: RunPanelProps) {
   if (!activeRun) return null
   return (
-    <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem', justifyContent: 'center', alignItems: 'center' }}>
+    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
       {runSteps.map((step) => (
         <div key={step.key} className={`status-pill ${step.state === 'active' ? 'active' : ''}`}>
            {step.state === 'completed' ? '✓' : ''} {step.label}
@@ -55,7 +56,7 @@ export function RunPanel({ activeRun, busy, runSteps, hasRunningRun, onCancel }:
         <button 
           onClick={onCancel} 
           disabled={busy || activeRun.status === 'cancelling'}
-          style={{ background: 'transparent', border: 'none', color: '#ef4444', fontSize: '0.75rem', cursor: 'pointer', marginLeft: '12px' }}
+          style={{ background: 'transparent', border: 'none', color: '#ff3b30', fontSize: '0.75rem', cursor: 'pointer', marginLeft: '12px', fontWeight: 600 }}
         >
           停止运行
         </button>
@@ -95,8 +96,8 @@ export function ChatPanel({
     <main className="main-panel">
       <header className="chat-header">
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-          <h2 style={{ fontSize: '1.1rem', fontWeight: 700 }}>{activeThreadTitle || '新对话'}</h2>
-          {activeThread?.updated_at && <span style={{ fontSize: '0.7rem', color: '#3f3f46' }}>{activeThread.updated_at}</span>}
+          <h2 style={{ fontSize: '1rem', fontWeight: 700 }}>{activeThreadTitle || '新建对话'}</h2>
+          {activeThread?.updated_at && <span style={{ fontSize: '0.7rem', color: 'var(--text-desc)' }}>{activeThread.updated_at}</span>}
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           {activeRun && <span className="status-pill active">{activeRun.current_step}</span>}
@@ -107,8 +108,8 @@ export function ChatPanel({
         {renderMainTimeline()}
         {renderRunInspector()}
         {busy && (
-          <div style={{ textAlign: 'center', padding: '2rem' }}>
-            <span style={{ color: 'var(--primary-color)', fontSize: '0.9rem', fontWeight: 600 }}>BOE Copilot 正在同步中...</span>
+          <div style={{ padding: '2rem', textAlign: 'center' }}>
+            <span className="thinking-text">思考中...</span>
           </div>
         )}
       </div>
@@ -119,7 +120,7 @@ export function ChatPanel({
             <textarea 
               value={question} 
               onChange={(e) => onQuestionChange(e.target.value)} 
-              placeholder={renderComposerHint || "询问关于生产、库存或计划的问题..."} 
+              placeholder={renderComposerHint || "发送消息..."} 
               rows={1} 
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -153,13 +154,13 @@ export function ProfilePanel({ currentPassword, newPassword, busy, onCurrentPass
   return (
     <div className="auth-shell">
       <div className="auth-card" style={{ maxWidth: '420px' }}>
-        <h2 style={{ textAlign: 'center', marginBottom: '2rem' }}>安全设置</h2>
+        <h2 style={{ textAlign: 'center', marginBottom: '2rem', fontWeight: 800 }}>个人设置</h2>
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <input type="password" value={currentPassword} onChange={(e) => onCurrentPasswordChange(e.target.value)} placeholder="当前密码" />
-            <input type="password" value={newPassword} onChange={(e) => onNewPasswordChange(e.target.value)} placeholder="设置新密码" />
+            <input type="password" value={newPassword} onChange={(e) => onNewPasswordChange(e.target.value)} placeholder="新密码" />
           </div>
-          <button type="submit" className="btn-primary" disabled={busy}>更新凭据</button>
+          <button type="submit" className="btn-primary" disabled={busy}>保存修改</button>
         </form>
       </div>
     </div>
@@ -179,21 +180,27 @@ type AdminUsersPanelProps = {
 export function AdminUsersPanel({ adminUsers, busy, drafts, onDraftChange, onToggleUser, onToggleAdmin, onResetPassword }: AdminUsersPanelProps) {
   return (
     <div style={{ padding: '3rem 2rem', maxWidth: '1100px', margin: '0 auto', overflowY: 'auto' }}>
-      <h2 style={{ marginBottom: '2.5rem', fontWeight: 800 }}>用户管理</h2>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
+      <header style={{ marginBottom: '3rem' }}>
+        <h2 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.03em' }}>用户中心</h2>
+        <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>管理系统访问权限与安全策略</p>
+      </header>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1.5rem' }}>
         {adminUsers.map((user) => (
-          <div key={user.id} className="embedded-card" style={{ padding: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-              <strong style={{ fontSize: '1.1rem' }}>{user.username}</strong>
-              <span className={`status-pill ${user.is_active ? 'active' : ''}`}>{user.is_active ? 'Active' : 'Disabled'}</span>
+          <div key={user.id} className="embedded-card" style={{ padding: '1.75rem', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(10px)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <strong style={{ fontSize: '1.15rem', letterSpacing: '-0.01em' }}>{user.username}</strong>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-desc)', marginTop: '2px' }}>Role: {user.roles.join(', ')}</span>
+              </div>
+              <span className={`status-pill ${user.is_active ? 'active' : ''}`}>{user.is_active ? 'Active' : 'Banned'}</span>
             </div>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem' }}>
-              <button className="nav-item" style={{ flex: 1, justifyContent: 'center', background: 'rgba(255,255,255,0.05)' }} onClick={() => onToggleUser(user)}>{user.is_active ? '禁用' : '启用'}</button>
-              <button className="nav-item" style={{ flex: 1, justifyContent: 'center', background: 'rgba(255,255,255,0.05)' }} onClick={() => onToggleAdmin(user)}>{user.roles.includes('admin') ? '降级' : '升级'}</button>
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
+              <button className="btn-ghost" style={{ flex: 1, padding: '0.6rem' }} onClick={() => onToggleUser(user)}>{user.is_active ? '禁用账号' : '激活账号'}</button>
+              <button className="btn-ghost" style={{ flex: 1, padding: '0.6rem' }} onClick={() => onToggleAdmin(user)}>{user.roles.includes('admin') ? '取消管理' : '提升管理'}</button>
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <input style={{ flex: 1, padding: '0.6rem', fontSize: '0.8rem' }} value={drafts[user.id] || ''} onChange={(e) => onDraftChange(user.id, e.target.value)} placeholder="重置密码" />
-              <button className="btn-send" style={{ padding: '0.5rem 1rem' }} onClick={() => onResetPassword(user)}>确认</button>
+            <div style={{ display: 'flex', gap: '8px', background: 'rgba(0,0,0,0.03)', padding: '4px', borderRadius: '12px' }}>
+              <input style={{ flex: 1, padding: '0.6rem', fontSize: '0.85rem', border: 'none', background: 'transparent' }} value={drafts[user.id] || ''} onChange={(e) => onDraftChange(user.id, e.target.value)} placeholder="重置密码" />
+              <button className="btn-send" style={{ borderRadius: '10px', padding: '0 1rem' }} onClick={() => onResetPassword(user)}>确认</button>
             </div>
           </div>
         ))}
@@ -207,26 +214,29 @@ type AuditPanelProps = { audits: AuditRow[] }
 export function AuditPanel({ audits }: AuditPanelProps) {
   return (
     <div style={{ padding: '3rem 2rem', maxWidth: '1100px', margin: '0 auto', overflowY: 'auto' }}>
-      <h2 style={{ marginBottom: '2.5rem', fontWeight: 800 }}>系统审计</h2>
-      <div className="embedded-card">
+      <header style={{ marginBottom: '3rem' }}>
+        <h2 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.03em' }}>安全审计</h2>
+        <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>全量系统操作日志实时监控</p>
+      </header>
+      <div className="embedded-card" style={{ background: '#fff' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
           <thead>
-            <tr style={{ background: 'rgba(255,255,255,0.03)', color: '#71717a' }}>
-              <th style={{ padding: '1rem', textAlign: 'left' }}>动作</th>
-              <th style={{ padding: '1rem', textAlign: 'left' }}>对象</th>
-              <th style={{ padding: '1rem', textAlign: 'left' }}>状态</th>
-              <th style={{ padding: '1rem', textAlign: 'left' }}>用户</th>
-              <th style={{ padding: '1rem', textAlign: 'left' }}>时间</th>
+            <tr style={{ background: '#f8f8fa', color: 'var(--text-secondary)' }}>
+              <th style={{ padding: '1.25rem 1rem', textAlign: 'left', fontWeight: 700 }}>动作</th>
+              <th style={{ padding: '1.25rem 1rem', textAlign: 'left', fontWeight: 700 }}>目标</th>
+              <th style={{ padding: '1.25rem 1rem', textAlign: 'left', fontWeight: 700 }}>状态</th>
+              <th style={{ padding: '1.25rem 1rem', textAlign: 'left', fontWeight: 700 }}>操作人</th>
+              <th style={{ padding: '1.25rem 1rem', textAlign: 'left', fontWeight: 700 }}>时间</th>
             </tr>
           </thead>
           <tbody>
             {audits.map((row) => (
-              <tr key={row.id} style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                <td style={{ padding: '1rem', color: 'var(--primary-color)', fontWeight: 600 }}>{row.action}</td>
-                <td style={{ padding: '1rem' }}>{row.target_type}</td>
-                <td style={{ padding: '1rem' }}><span className="status-pill">{row.status}</span></td>
-                <td style={{ padding: '1rem' }}>{row.actor_username || 'system'}</td>
-                <td style={{ padding: '1rem', fontSize: '0.75rem', color: '#3f3f46' }}>{row.created_at}</td>
+              <tr key={row.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                <td style={{ padding: '1.25rem 1rem', color: 'var(--primary-color)', fontWeight: 700 }}>{row.action}</td>
+                <td style={{ padding: '1.25rem 1rem', color: 'var(--text-secondary)' }}>{row.target_type}</td>
+                <td style={{ padding: '1.25rem 1rem' }}><span className="status-pill">{row.status}</span></td>
+                <td style={{ padding: '1.25rem 1rem', fontWeight: 500 }}>{row.actor_username || 'system'}</td>
+                <td style={{ padding: '1.25rem 1rem', fontSize: '0.75rem', color: 'var(--text-desc)', fontFamily: 'monospace' }}>{row.created_at}</td>
               </tr>
             ))}
           </tbody>
@@ -268,13 +278,13 @@ export function MessageCard({ message, busy, canRegenerate, onRegenerate }: Mess
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                 <thead>
-                  <tr style={{ background: 'rgba(255,255,255,0.03)', color: '#71717a' }}>
+                  <tr style={{ background: '#f2f2f7', color: 'var(--text-secondary)' }}>
                     {columns.map((col) => <th key={String(col)} style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>{String(col)}</th>)}
                   </tr>
                 </thead>
                 <tbody>
                   {rows.slice(0, 10).map((row, rowIndex) => (
-                    <tr key={rowIndex} style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                    <tr key={rowIndex} style={{ borderTop: '1px solid var(--border-subtle)' }}>
                       {(Array.isArray(row) ? row : []).map((cell, cellIndex) => <td key={cellIndex} style={{ padding: '0.75rem 1rem' }}>{String(cell)}</td>)}
                     </tr>
                   ))}
@@ -282,7 +292,7 @@ export function MessageCard({ message, busy, canRegenerate, onRegenerate }: Mess
               </table>
             </div>
             {rows.length > 10 && (
-              <div style={{ padding: '0.6rem', textAlign: 'center', fontSize: '0.7rem', color: '#3f3f46', background: 'rgba(0,0,0,0.3)' }}>
+              <div style={{ padding: '0.6rem', textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-desc)', background: '#fff', borderTop: '1px solid var(--border-subtle)' }}>
                 仅展示前 10 条结果 (共 {rowCount} 条)
               </div>
             )}
@@ -292,11 +302,11 @@ export function MessageCard({ message, busy, canRegenerate, onRegenerate }: Mess
         {message.role === 'assistant' && sqlQuery && (
           <div className="embedded-card">
             <div className="sql-header">
-              <span>SQL EXECUTOR</span>
-              <span>STRICT MODE</span>
+              <span>SQL ENGINE</span>
+              <span>READ ONLY</span>
             </div>
-            <div style={{ background: '#000', padding: '1rem' }}>
-              <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '0.8rem', color: '#a1a1aa', overflowX: 'auto' }}>{sqlQuery}</pre>
+            <div style={{ background: '#f9f9fb', padding: '1rem' }}>
+              <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '0.8rem', color: '#444', overflowX: 'auto' }}>{sqlQuery}</pre>
             </div>
           </div>
         )}
@@ -305,12 +315,12 @@ export function MessageCard({ message, busy, canRegenerate, onRegenerate }: Mess
           <span>{message.created_at}</span>
           {message.role === 'assistant' && (
             <>
-              {route?.route && <span style={{ color: 'var(--primary-color)' }}>• {String(route.route).toUpperCase()}</span>}
+              {route?.route && <span style={{ color: 'var(--primary-color)', fontWeight: 600 }}>• {String(route.route).toUpperCase()}</span>}
               {activeSkill && <span>• {activeSkill}</span>}
             </>
           )}
           {message.role === 'assistant' && canRegenerate && (
-            <button style={{ background: 'transparent', border: 'none', color: '#71717a', fontSize: '0.75rem', cursor: 'pointer', padding: 0 }} onClick={() => onRegenerate(message.id)} disabled={busy}>
+            <button style={{ background: 'transparent', border: 'none', color: 'var(--primary-color)', fontSize: '0.75rem', cursor: 'pointer', padding: 0, fontWeight: 600 }} onClick={() => onRegenerate(message.id)} disabled={busy}>
               重新生成
             </button>
           )}

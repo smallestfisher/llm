@@ -1,38 +1,46 @@
 :root {
   --primary-color: #007aff;
-  --bg-main: #000000;
-  --bg-sidebar: rgba(10, 10, 10, 0.4);
-  --bg-card: rgba(255, 255, 255, 0.03);
-  --text-main: #f4f4f5;
-  --text-muted: #a1a1aa;
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-active: rgba(255, 255, 255, 0.15);
+  --primary-glow: rgba(0, 122, 255, 0.15);
+  --bg-main: #ffffff;
+  --bg-sidebar: rgba(250, 250, 250, 0.4);
+  --bg-card: rgba(255, 255, 255, 0.7);
+  --bg-hover: rgba(0, 0, 0, 0.02);
+  --text-main: #1a1a1a;
+  --text-secondary: #4a4a4a;
+  --text-muted: #8e8e93;
+  --text-desc: #b0b0b0;
+  --border-subtle: rgba(0, 0, 0, 0.05);
+  --border-active: rgba(0, 0, 0, 0.1);
   --glass-blur: blur(40px);
-  --radius-xl: 2.5rem;
+  --radius-xl: 2rem;
   --radius-lg: 1.25rem;
   --radius-md: 0.75rem;
+  --radius-sm: 0.5rem;
+  --shadow-soft: 0 8px 30px rgba(0, 0, 0, 0.04);
+  --shadow-float: 0 20px 50px rgba(0, 0, 0, 0.08);
   
   font-family: 'Inter', -apple-system, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 * {
   box-sizing: border-box;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 body {
   margin: 0;
   overflow: hidden;
-  background: #000;
+  background: var(--bg-main);
   color: var(--text-main);
 }
 
-/* Unified Mesh Gradient Background */
+/* Background Mesh Gradients (Light) */
 .app-shell, .auth-shell {
   min-height: 100vh;
   position: relative;
   overflow: hidden;
-  background: #000;
+  background: #fff;
 }
 
 .app-shell::before, .auth-shell::before {
@@ -41,24 +49,32 @@ body {
   width: 140vw;
   height: 140vh;
   background: 
-    radial-gradient(circle at 80% 20%, rgba(0, 122, 255, 0.15) 0%, transparent 40%),
-    radial-gradient(circle at 20% 80%, rgba(88, 86, 214, 0.12) 0%, transparent 40%);
-  filter: blur(80px);
+    radial-gradient(circle at 80% 10%, rgba(0, 122, 255, 0.05) 0%, transparent 40%),
+    radial-gradient(circle at 10% 80%, rgba(139, 92, 246, 0.04) 0%, transparent 40%);
   z-index: 0;
   pointer-events: none;
 }
 
-/* Auth Card (Restored from the version you liked) */
+/* -------------------------------------------------------------------------- */
+/* Auth Layout (LobeHub Light) */
+/* -------------------------------------------------------------------------- */
+
+.auth-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .auth-card {
   width: 100%;
-  max-width: 440px;
+  max-width: 420px;
   background: var(--bg-card);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   padding: 3.5rem 3rem;
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.8), inset 0 1px 1px rgba(255,255,255,0.05);
+  box-shadow: var(--shadow-float);
   display: flex;
   flex-direction: column;
   gap: 2.5rem;
@@ -67,251 +83,319 @@ body {
 
 .auth-header { text-align: center; }
 .auth-logo {
-  width: 80px; height: 80px;
+  width: 72px; height: 72px;
   background: linear-gradient(135deg, #007aff 0%, #5856d6 100%);
-  border-radius: 20px;
+  border-radius: 18px;
   margin: 0 auto 1.5rem;
   display: flex; align-items: center; justify-content: center;
-  font-size: 2.5rem; font-weight: 900; color: white;
-  box-shadow: 0 0 30px rgba(0, 122, 255, 0.4);
+  font-size: 2.2rem; font-weight: 900; color: white;
+  box-shadow: 0 10px 25px var(--primary-glow);
 }
 
 .auth-tabs {
   display: flex;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(0, 0, 0, 0.03);
   padding: 4px;
-  border-radius: 14px;
-  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
 }
 
 .auth-tab {
-  flex: 1; padding: 0.75rem; border: none; background: transparent;
-  color: var(--text-muted); font-weight: 600; cursor: pointer; border-radius: 10px;
+  flex: 1; padding: 0.625rem; border: none; background: transparent;
+  color: var(--text-muted); font-weight: 600; cursor: pointer; border-radius: 8px;
+  font-size: 0.875rem;
 }
 
 .auth-tab.active {
-  background: rgba(255, 255, 255, 0.08);
-  color: white;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-}
-
-/* Unified Input Style */
-input, textarea {
-  width: 100%;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--border-subtle);
-  border-radius: 14px;
-  padding: 1.125rem 1.25rem;
-  color: white;
-  font-size: 1rem;
-  outline: none;
-}
-
-input:focus, textarea:focus {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(0, 122, 255, 0.5);
-  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
-}
-
-/* Primary High-Contrast Button (The one you liked) */
-.btn-primary {
-  width: 100%;
-  padding: 1.125rem;
   background: #fff;
-  color: #000;
-  border: none;
-  border-radius: 16px;
-  font-weight: 700;
-  font-size: 1rem;
-  cursor: pointer;
-  box-shadow: 0 10px 25px rgba(255,255,255,0.1);
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: #f4f4f5;
-  transform: translateY(-2px);
+  color: var(--text-main);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.05);
 }
 
 /* -------------------------------------------------------------------------- */
-/* Internal Interaction (Aligned to Auth Style) */
+/* Main Layout Architecture (Three-Column Style) */
 /* -------------------------------------------------------------------------- */
 
 .app-shell {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 64px 260px 1fr;
   height: 100vh;
-  z-index: 1;
 }
 
+/* Slim Navigation Rail */
+.slim-rail {
+  background: #fcfcfc;
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem 0;
+  gap: 1.5rem;
+  z-index: 30;
+}
+
+.rail-item {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+}
+
+.rail-item:hover { background: var(--bg-hover); color: var(--text-main); }
+.rail-item.active { background: rgba(0, 122, 255, 0.08); color: var(--primary-color); }
+
+/* Session Sidebar */
 .sidebar {
   background: var(--bg-sidebar);
   backdrop-filter: var(--glass-blur);
   border-right: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-  padding: 2rem 1rem;
-  z-index: 10;
+  padding: 1.5rem 0.75rem;
+  z-index: 20;
 }
 
 .sidebar h3 {
   font-size: 0.7rem;
-  color: #3f3f46;
+  color: var(--text-desc);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  margin: 2rem 0 0.75rem 1rem;
+  margin: 1.5rem 0 0.5rem 0.75rem;
 }
 
 .nav-item, .thread-item {
   display: flex; align-items: center;
-  padding: 0.75rem 1rem;
-  border-radius: 14px;
-  color: var(--text-muted);
+  padding: 0.625rem 0.75rem;
+  border-radius: 10px;
+  color: var(--text-secondary);
   font-size: 0.875rem;
   border: none; background: transparent;
   width: 100%; text-align: left; cursor: pointer;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .nav-item:hover, .thread-item:hover {
-  background: rgba(255,255,255,0.03);
-  color: white;
+  background: var(--bg-hover);
 }
 
 .nav-item.active, .thread-item.active {
-  background: rgba(255,255,255,0.06);
-  color: white;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-main);
+  font-weight: 600;
 }
 
-/* Internal Panels */
+/* Chat Main Panel */
 .main-panel {
   display: flex;
   flex-direction: column;
   height: 100vh;
   position: relative;
-  z-index: 5;
+  background: transparent;
+  z-index: 10;
 }
 
 .chat-header {
-  height: 80px;
-  padding: 0 2.5rem;
+  height: 64px;
+  padding: 0 2rem;
   display: flex; align-items: center; justify-content: space-between;
   border-bottom: 1px solid var(--border-subtle);
-  background: rgba(0,0,0,0.2);
+  background: rgba(255, 255, 255, 0.6);
   backdrop-filter: blur(20px);
 }
 
 .message-list {
   flex: 1;
   overflow-y: auto;
-  padding: 2rem 2.5rem 14rem;
-  max-width: 900px;
+  padding: 2rem 2rem 12rem;
+  max-width: 860px;
   width: 100%;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 4rem;
+  gap: 3.5rem;
 }
 
-/* Restored Message Styles with Glassmorphism */
-.message-card { display: flex; gap: 1.5rem; }
+/* -------------------------------------------------------------------------- */
+/* Message Components */
+/* -------------------------------------------------------------------------- */
+
+.message-card { display: flex; gap: 1.25rem; }
 .message-card.user { flex-direction: row-reverse; }
 
 .avatar {
-  width: 44px; height: 44px;
-  border-radius: 14px;
+  width: 38px; height: 38px;
+  border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
-  font-weight: 900; flex-shrink: 0;
+  font-weight: 800; flex-shrink: 0;
+  font-size: 0.85rem;
 }
 
-.assistant .avatar { background: #171717; border: 1px solid var(--border-subtle); color: var(--primary-color); }
-.user .avatar { background: var(--primary-color); color: white; box-shadow: 0 4px 15px var(--primary-glow); }
+.assistant .avatar { background: #f2f2f7; color: var(--primary-color); border: 1px solid var(--border-subtle); }
+.user .avatar { background: #000; color: #fff; }
+
+.message-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 85%;
+}
 
 .message-bubble {
-  font-size: 1.05rem;
-  line-height: 1.7;
-  color: #e4e4e7;
+  font-size: 1rem;
+  line-height: 1.6;
 }
 
 .user .message-bubble {
-  background: rgba(0, 122, 255, 0.15);
-  padding: 1.25rem 1.75rem;
-  border-radius: 1.75rem;
+  background: #007aff;
+  color: #fff;
+  padding: 0.875rem 1.25rem;
+  border-radius: 1.25rem;
   border-top-right-radius: 4px;
-  border: 1px solid rgba(0, 122, 255, 0.2);
-  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 15px rgba(0, 122, 255, 0.2);
 }
 
-/* Floating Dock (The Ultimate Glass Effect) */
+.assistant .message-bubble {
+  color: var(--text-main);
+}
+
+.message-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: flex;
+  gap: 1rem;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Floating Composer Dock */
+/* -------------------------------------------------------------------------- */
+
 .composer-container {
   position: absolute;
-  bottom: 2.5rem;
-  left: 2.5rem;
-  right: 2.5rem;
-  max-width: 840px;
+  bottom: 2rem;
+  left: 2rem;
+  right: 2rem;
+  max-width: 800px;
   margin: 0 auto;
-  z-index: 30;
+  z-index: 40;
 }
 
 .composer-dock {
-  background: rgba(20, 20, 20, 0.6);
+  background: rgba(255, 255, 255, 0.8);
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--border-active);
-  border-radius: 2rem;
-  padding: 1rem;
-  box-shadow: 0 40px 100px rgba(0,0,0,0.7), inset 0 1px 1px rgba(255,255,255,0.05);
+  border-radius: 1.5rem;
+  padding: 0.75rem;
+  box-shadow: var(--shadow-float);
+  display: flex;
+  flex-direction: column;
 }
 
 textarea {
-  min-height: 60px;
+  width: 100%;
   background: transparent;
   border: none;
-  box-shadow: none;
+  resize: none;
+  color: var(--text-main);
+  font-size: 1rem;
   padding: 0.5rem 1rem;
+  outline: none;
+  min-height: 44px;
 }
 
-.btn-send {
-  background: #fff;
-  color: #000;
-  border-radius: 14px;
-  padding: 0.75rem 1.75rem;
-  font-weight: 800;
+/* -------------------------------------------------------------------------- */
+/* Standard Components (Buttons, Tables, Cards) */
+/* -------------------------------------------------------------------------- */
+
+.btn-primary {
+  background: #000;
+  color: #fff;
   border: none;
+  border-radius: 12px;
+  padding: 0.75rem 1.5rem;
+  font-weight: 700;
   cursor: pointer;
 }
 
-/* Embedded Cards */
-.embedded-card {
-  background: rgba(255, 255, 255, 0.02);
-  backdrop-filter: blur(10px);
+.btn-primary:hover:not(:disabled) { background: #222; transform: translateY(-1px); }
+
+.btn-ghost {
+  background: transparent;
   border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-  margin-top: 1.5rem;
+  color: var(--text-secondary);
+  border-radius: 10px;
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-ghost:hover { background: var(--bg-hover); border-color: var(--border-active); }
+
+.embedded-card {
+  background: #f9f9fb;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  margin-top: 1rem;
   overflow: hidden;
+  box-shadow: var(--shadow-soft);
+}
+
+.result-table th {
+  background: #f2f2f7;
+  color: var(--text-muted);
+  text-align: left;
+  padding: 0.75rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.result-table td {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.875rem;
+}
+
+.sql-header {
+  padding: 0.5rem 1rem;
+  background: #f2f2f7;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: var(--text-muted);
+}
+
+.sql-block pre {
+  margin: 0;
+  padding: 1.25rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  color: #4a4a4a;
+  overflow-x: auto;
 }
 
 .status-pill {
-  padding: 0.3rem 0.75rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  background: #f2f2f7;
+  border-radius: 6px;
+  font-size: 0.7rem;
   font-weight: 700;
   color: var(--text-muted);
 }
 
-.status-pill.active {
-  border-color: var(--primary-color);
-  color: var(--primary-color);
-  background: rgba(0, 122, 255, 0.1);
-}
+.status-pill.active { background: #e5e5ea; color: var(--text-main); }
 
 .error-bubble {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  color: #ef4444;
-  padding: 1rem 2rem;
-  border-radius: 16px;
-  margin-bottom: 1.5rem;
+  background: #fff2f2;
+  border: 1px solid #ffcfcf;
+  color: #dc2626;
+  padding: 0.75rem 1.5rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
   text-align: center;
 }
+
+/* Animations */
+@keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 0.8; } 100% { opacity: 0.4; } }
+.thinking-text { animation: pulse 2s infinite; color: var(--primary-color); font-weight: 600; font-size: 0.9rem; }
