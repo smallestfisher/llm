@@ -72,6 +72,7 @@ type ChatPanelProps = {
   activeThreadTitle: string
   activeThread: ThreadDetail | null
   busy: boolean
+  showThinking: boolean
   activeRun: RunRow | null
   renderMainTimeline: () => ReactNode
   renderRunInspector: () => ReactNode
@@ -86,6 +87,7 @@ export function ChatPanel({
   activeThreadTitle,
   activeThread,
   busy,
+  showThinking,
   activeRun,
   renderMainTimeline,
   renderRunInspector,
@@ -100,7 +102,7 @@ export function ChatPanel({
       <header className="chat-header">
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
           <h2 style={{ fontSize: '1rem', fontWeight: 700 }}>{activeThreadTitle || '新建对话'}</h2>
-          {activeThread?.updated_at && <span style={{ fontSize: '0.7rem', color: 'var(--text-desc)' }}>{activeThread.updated_at}</span>}
+          {activeThread?.updated_at && <span style={{ fontSize: '0.7rem', color: 'var(--text-desc)' }}>{formatDisplayDate(activeThread.updated_at)}</span>}
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           {activeRun && <span className="status-pill active">{activeRun.current_step}</span>}
@@ -110,7 +112,7 @@ export function ChatPanel({
       <div className="message-list">
         {renderMainTimeline()}
         {renderRunInspector()}
-        {busy && (
+        {showThinking && (
           <div style={{ padding: '2rem', textAlign: 'center' }}>
             <span className="thinking-text">思考中...</span>
           </div>
@@ -331,7 +333,7 @@ export function MessageCard({ message, busy, canRegenerate, onRegenerate }: Mess
         )}
 
         <div className="message-meta">
-          <span>{message.created_at}</span>
+          <span>{formatDisplayDate(message.created_at)}</span>
           {message.role === 'assistant' && (
             <>
               {route?.route && <span style={{ color: 'var(--primary-color)', fontWeight: 600 }}>• {String(route.route).toUpperCase()}</span>}

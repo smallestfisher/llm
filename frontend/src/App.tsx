@@ -146,11 +146,15 @@ function renderRunInspector(activeRun: ReturnType<typeof getActiveRun>): ReactNo
 
 function renderTimeline(
   activeThread: ThreadDetail | null,
+  hasResolvedThread: boolean,
   latestAssistantMessages: Set<number>,
   busy: boolean,
   onRegenerate: (messageId: number) => void,
   onPickQuickSuggestion: (value: string) => void,
 ) {
+  if (!hasResolvedThread) {
+    return null
+  }
   const messages = activeThread?.messages ?? []
   if (!messages.length) {
     return renderEmptyThread(onPickQuickSuggestion)
@@ -198,7 +202,9 @@ export function App() {
   const activeRunDetail = useMemo(() => getActiveRunDetail(activeRun), [activeRun])
   const hasRunningRun = useMemo(() => getHasRunningRun(activeRun), [activeRun])
   const activeThreadTitle = activeThread?.title || '新对话'
+  const hasResolvedThread = Boolean(activeThreadId ? activeThread : threads.length === 0)
   const canSend = Boolean(!busy && !runBusy && activeThreadId)
+  const isChatLoading = runBusy || isPolling || hasRunningRun
   const composerHint = hasRunningRun ? '任务运行中，您可以选择停止运行。' : '输入业务数据查询问题...'
 
   useEffect(() => {
@@ -656,9 +662,10 @@ export function App() {
           <ChatPanel
             activeThreadTitle={activeThreadTitle}
             activeThread={activeThread}
-            busy={busy || runBusy || isPolling}
+            busy={busy || isChatLoading}
+            showThinking={isChatLoading}
             activeRun={activeRun}
-            renderMainTimeline={() => renderTimeline(activeThread, latestAssistantMessages, busy || runBusy, handleRegenerate, handlePickQuickSuggestion)}
+            renderMainTimeline={() => renderTimeline(activeThread, hasResolvedThread, latestAssistantMessages, busy || runBusy, handleRegenerate, handlePickQuickSuggestion)}
             renderRunInspector={() => (
               <div style={{ maxWidth: '800px', margin: '0 auto 1.5rem', width: '100%' }}>
                 <RunPanel
