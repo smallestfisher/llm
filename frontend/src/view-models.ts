@@ -55,3 +55,22 @@ export function getIsTerminalRun(activeRun: RunRow | null): boolean {
 export function isRegeneratableMessage(message: MessageRow, latestAssistantMessages: Set<number>) {
   return message.role === 'assistant' && latestAssistantMessages.has(message.id)
 }
+
+export function formatDisplayDate(isoString: string | null | undefined): string {
+  if (!isoString) return ''
+  try {
+    const date = new Date(isoString)
+    if (isNaN(date.getTime())) return isoString.replace('T', ' ').split('.')[0]
+    
+    const Y = date.getFullYear()
+    const M = String(date.getMonth() + 1).padStart(2, '0')
+    const D = String(date.getDate()).padStart(2, '0')
+    const h = String(date.getHours()).padStart(2, '0')
+    const m = String(date.getMinutes()).padStart(2, '0')
+    const s = String(date.getSeconds()).padStart(2, '0')
+    
+    return `${Y}-${M}-${D} ${h}:${m}:${s}`
+  } catch {
+    return String(isoString).replace('T', ' ').split('.')[0]
+  }
+}
