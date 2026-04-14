@@ -500,7 +500,6 @@ export function App() {
           <div className="auth-header">
             <div className="auth-logo">B</div>
             <h1>BOE Data Copilot</h1>
-            <p>专业的制造业数据问答工作台</p>
           </div>
 
           <div className="auth-tabs">
@@ -518,8 +517,8 @@ export function App() {
             </button>
           </div>
 
-          <form className="auth-form" onSubmit={handleAuthSubmit}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+            <div className="input-group">
               <input 
                 type="text"
                 value={username} 
@@ -538,14 +537,14 @@ export function App() {
               />
             </div>
             
-            {error && <div className="error-text">{error}</div>}
+            {error && <div className="error-bubble">{error}</div>}
 
-            <button type="submit" className="btn btn-primary" disabled={busy}>
-              {busy ? '处理中...' : mode === 'login' ? '立即登录' : '创建账号'}
+            <button type="submit" className="btn-submit" disabled={busy}>
+              {busy ? '正在处理...' : mode === 'login' ? '立即登录' : '创建账号'}
             </button>
           </form>
 
-          <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+          <div style={{ textAlign: 'center', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
             {mode === 'login' ? '初次使用？请切换至注册' : '已有账号？请切换至登录'}
           </div>
         </div>

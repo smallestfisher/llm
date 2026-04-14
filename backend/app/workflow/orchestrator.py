@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from app.workflow.composer import CrossDomainComposer
 from app.workflow.router import route_question
-from app.workflow.state import RouteDecision, SkillExecution
+from app.workflow.state import RouteDecision, SkillExecution, CancelledError
 from app.skills.demand import DemandSkill
 from app.skills.generic import GenericSkill
 from app.skills.inventory import InventorySkill
 from app.skills.planning import PlanningSkill
 from app.skills.production import ProductionSkill
-from app.workflow.state import RouteDecision, SkillExecution, CancelledError
+from app.skills.sales import SalesSkill
 
 
 _COMPOSER = CrossDomainComposer()
