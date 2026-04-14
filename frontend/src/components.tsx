@@ -18,13 +18,13 @@ export function ThreadList({ threads, activeThreadId, busy, onSelect, onDelete }
             className={`thread-item ${thread.public_id === activeThreadId ? 'active' : ''}`} 
             onClick={() => onSelect(thread.public_id)}
           >
-            {thread.title || '新会话'}
+            {thread.title || '未命名会话'}
           </button>
           <button 
             className="thread-delete" 
             disabled={busy} 
             onClick={() => onDelete(thread.public_id)}
-            title="删除会话"
+            title="删除"
           >
             ✕
           </button>
@@ -46,33 +46,21 @@ type RunPanelProps = {
 export function RunPanel({ activeRun, busy, activeRunDetail, runSteps, hasRunningRun, onCancel }: RunPanelProps) {
   if (!activeRun) return null
   return (
-    <div className="run-panel">
-      <div className="run-panel-head">
-        <div>
-          <span className="badge badge-blue">{activeRun.status}</span>
-          <span style={{ marginLeft: '8px', fontSize: '0.875rem', color: '#64748b' }}>{activeRunDetail}</span>
+    <div className="status-bar">
+      {runSteps.map((step) => (
+        <div key={step.key} className={`status-pill ${step.state === 'active' ? 'active' : ''}`}>
+           {step.state === 'completed' ? '✓' : ''} {step.label}
         </div>
-        {hasRunningRun && (
-          <button 
-            className="btn btn-danger" 
-            style={{ padding: '4px 12px' }}
-            onClick={onCancel} 
-            disabled={busy || activeRun.status === 'cancelling'}
-          >
-            {activeRun.status === 'cancelling' ? '停止中...' : '停止运行'}
-          </button>
-        )}
-      </div>
-      <div className="run-steps">
-        {runSteps.map((step) => (
-          <div key={step.key} className={`run-step ${step.state}`}>
-            <span className="run-step-marker">
-              {step.state === 'completed' ? '✓' : step.state === 'active' ? '●' : '○'}
-            </span>
-            <span>{step.label}</span>
-          </div>
-        ))}
-      </div>
+      ))}
+      {hasRunningRun && (
+        <button 
+          onClick={onCancel} 
+          disabled={busy || activeRun.status === 'cancelling'}
+          style={{ background: 'transparent', border: 'none', color: '#ef4444', fontSize: '0.75rem', cursor: 'pointer', padding: '0 0.5rem' }}
+        >
+          {activeRun.status === 'cancelling' ? '停止中...' : '停止'}
+        </button>
+      )}
     </div>
   )
 }
@@ -107,14 +95,9 @@ export function ChatPanel({
   return (
     <main className="main-panel">
       <header className="chat-header">
-        <div>
-          <h2>{activeThreadTitle || 'BOE Data Copilot'}</h2>
-          {activeThread?.updated_at && (
-            <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>上次更新：{activeThread.updated_at}</span>
-          )}
-        </div>
+        <h2>{activeThreadTitle || '新建对话'}</h2>
         <div style={{ display: 'flex', gap: '8px' }}>
-           {activeRun && <span className="badge badge-gray">{activeRun.current_step}</span>}
+          {activeRun && <span className="status-pill">{activeRun.current_step}</span>}
         </div>
       </header>
 
@@ -122,28 +105,35 @@ export function ChatPanel({
         {renderMainTimeline()}
         {renderRunInspector()}
         {busy && (
-          <div style={{ textAlign: 'center', padding: '1rem', color: '#64748b', fontSize: '0.875rem' }}>
-            <span className="loading-dots">正在思考中</span>
+          <div className="busy-indicator">
+            <span className="thinking-text">BOE Data Copilot 正在思考中...</span>
           </div>
         )}
       </div>
 
       <div className="composer-area">
         <div className="composer-container">
-          <form onSubmit={onSend} className="composer-input-wrap">
+          <form onSubmit={onSend} className="composer-dock">
             <textarea 
               value={question} 
               onChange={(e) => onQuestionChange(e.target.value)} 
-              placeholder={renderComposerHint || "输入业务问题，例如：上周 A1 产品的产出是多少？"} 
-              rows={3} 
+              placeholder={renderComposerHint || "发送消息..."} 
+              rows={1} 
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  onSend(e as any);
+                }
+              }}
             />
-            <div className="composer-actions">
+            <div className="composer-toolbar">
+              <span style={{ fontSize: '0.75rem', color: '#3f3f46' }}>Shift + Enter 换行</span>
               <button 
                 type="submit" 
-                className="btn btn-primary" 
+                className="send-btn" 
                 disabled={!canSend}
               >
-                {busy ? '处理中...' : '发送问题'}
+                {busy ? '...' : '发送'}
               </button>
             </div>
           </form>
@@ -164,22 +154,20 @@ type ProfilePanelProps = {
 
 export function ProfilePanel({ currentPassword, newPassword, busy, onCurrentPasswordChange, onNewPasswordChange, onSubmit }: ProfilePanelProps) {
   return (
-    <div className="admin-content">
-      <div className="auth-panel" style={{ margin: '2rem auto', boxShadow: 'var(--shadow-lg)' }}>
-        <h2>修改个人密码</h2>
-        <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div className="auth-shell">
+      <div className="auth-card" style={{ maxWidth: '400px' }}>
+        <h2 style={{ textAlign: 'center', marginBottom: '1.5rem' }}>安全设置</h2>
+        <form onSubmit={onSubmit} className="auth-form">
           <input 
-            className="input"
+            type="password" 
             value={currentPassword} 
             onChange={(e) => onCurrentPasswordChange(e.target.value)} 
-            type="password" 
             placeholder="当前密码" 
           />
           <input 
-            className="input"
+            type="password" 
             value={newPassword} 
             onChange={(e) => onNewPasswordChange(e.target.value)} 
-            type="password" 
             placeholder="新密码" 
           />
           <button type="submit" className="btn btn-primary" disabled={busy}>更新密码</button>
@@ -201,40 +189,38 @@ type AdminUsersPanelProps = {
 
 export function AdminUsersPanel({ adminUsers, busy, drafts, onDraftChange, onToggleUser, onToggleAdmin, onResetPassword }: AdminUsersPanelProps) {
   return (
-    <div className="admin-content">
-      <h2 style={{ marginBottom: '1.5rem' }}>用户管理</h2>
-      <div className="card-grid">
+    <div style={{ padding: '2rem', maxWidth: '1000px', margin: '0 auto', overflowY: 'auto' }}>
+      <h2 style={{ marginBottom: '2rem' }}>用户管理</h2>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
         {adminUsers.map((user) => (
-          <article key={user.id} className="data-card">
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <h4>{user.username}</h4>
+          <div key={user.id} className="embedded-card" style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.02)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <strong>{user.username}</strong>
               <span className={`badge ${user.is_active ? 'badge-green' : 'badge-gray'}`}>
-                {user.is_active ? '已启用' : '已禁用'}
+                {user.is_active ? 'Active' : 'Disabled'}
               </span>
             </div>
-            <div style={{ fontSize: '0.875rem', color: '#64748b' }}>
-              角色：{user.roles.map(r => <span key={r} className="badge badge-gray" style={{ marginLeft: '4px' }}>{r}</span>)}
+            <div style={{ fontSize: '0.8rem', color: '#71717a', marginBottom: '1rem' }}>
+              Roles: {user.roles.join(', ')}
             </div>
-            <div className="user-actions">
-              <button className="btn btn-ghost" style={{ flex: 1 }} disabled={busy} onClick={() => onToggleUser(user)}>
-                {user.is_active ? '禁用用户' : '启用用户'}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
+              <button className="nav-item" style={{ flex: 1, justifyContent: 'center', background: 'rgba(255,255,255,0.05)' }} onClick={() => onToggleUser(user)}>
+                {user.is_active ? '禁用' : '启用'}
               </button>
-              <button className="btn btn-ghost" style={{ flex: 1 }} disabled={busy} onClick={() => onToggleAdmin(user)}>
-                {user.roles.includes('admin') ? '取消管理员' : '设为管理员'}
+              <button className="nav-item" style={{ flex: 1, justifyContent: 'center', background: 'rgba(255,255,255,0.05)' }} onClick={() => onToggleAdmin(user)}>
+                {user.roles.includes('admin') ? '降级' : '设为管理员'}
               </button>
             </div>
-            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+            <div style={{ display: 'flex', gap: '8px' }}>
               <input 
-                style={{ flex: 1 }}
+                style={{ flex: 1, padding: '0.5rem' }}
                 value={drafts[user.id] || ''} 
                 onChange={(e) => onDraftChange(user.id, e.target.value)} 
-                placeholder="重置密码" 
+                placeholder="新密码" 
               />
-              <button className="btn btn-primary" style={{ padding: '8px 12px' }} disabled={busy} onClick={() => onResetPassword(user)}>
-                重置
-              </button>
+              <button className="send-btn" onClick={() => onResetPassword(user)}>重置</button>
             </div>
-          </article>
+          </div>
         ))}
       </div>
     </div>
@@ -245,27 +231,27 @@ type AuditPanelProps = { audits: AuditRow[] }
 
 export function AuditPanel({ audits }: AuditPanelProps) {
   return (
-    <div className="admin-content">
-      <h2 style={{ marginBottom: '1.5rem' }}>审计日志</h2>
-      <div className="result-table-wrap">
+    <div style={{ padding: '2rem', maxWidth: '1000px', margin: '0 auto', overflowY: 'auto' }}>
+      <h2 style={{ marginBottom: '2rem' }}>审计日志</h2>
+      <div className="embedded-card">
         <table className="result-table">
           <thead>
             <tr>
-              <th>操作</th>
+              <th>动作</th>
               <th>目标</th>
               <th>状态</th>
-              <th>操作人</th>
+              <th>用户</th>
               <th>时间</th>
             </tr>
           </thead>
           <tbody>
             {audits.map((row) => (
               <tr key={row.id}>
-                <td><span className="badge badge-blue">{row.action}</span></td>
-                <td>{row.target_type} / {row.target_id}</td>
+                <td>{row.action}</td>
+                <td>{row.target_type}</td>
                 <td>{row.status}</td>
                 <td>{row.actor_username || 'system'}</td>
-                <td>{row.created_at || ''}</td>
+                <td>{row.created_at}</td>
               </tr>
             ))}
           </tbody>
@@ -293,60 +279,70 @@ export function MessageCard({ message, busy, canRegenerate, onRegenerate }: Mess
   
   return (
     <article className={`message-card ${message.role === 'assistant' ? 'assistant' : 'user'}`}>
-      <div className="message-bubble">
-        {message.content}
-        
+      <div className="avatar">
+        {message.role === 'assistant' ? 'B' : 'U'}
+      </div>
+      
+      <div className="message-content">
+        <div className="message-bubble">
+          {message.content}
+        </div>
+
         {message.role === 'assistant' && (rows.length > 0 && columns.length > 0) && (
-          <div className="result-table-wrap">
-            <table className="result-table">
-              <thead>
-                <tr>{columns.map((col) => <th key={String(col)}>{String(col)}</th>)}</tr>
-              </thead>
-              <tbody>
-                {rows.slice(0, 10).map((row, rowIndex) => (
-                  <tr key={rowIndex}>
-                    {(Array.isArray(row) ? row : []).map((cell, cellIndex) => <td key={cellIndex}>{String(cell)}</td>)}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="embedded-card">
+            <div style={{ overflowX: 'auto' }}>
+              <table className="result-table">
+                <thead>
+                  <tr>{columns.map((col) => <th key={String(col)}>{String(col)}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {rows.slice(0, 10).map((row, rowIndex) => (
+                    <tr key={rowIndex}>
+                      {(Array.isArray(row) ? row : []).map((cell, cellIndex) => <td key={cellIndex}>{String(cell)}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             {rows.length > 10 && (
-              <div style={{ padding: '8px', textAlign: 'center', fontSize: '0.75rem', color: '#64748b', background: '#f8fafc' }}>
-                仅展示前 10 条结果
+              <div style={{ padding: '0.5rem', textAlign: 'center', fontSize: '0.7rem', color: '#3f3f46', background: 'rgba(0,0,0,0.2)' }}>
+                仅展示前 10 条结果 (共 {rowCount} 条)
               </div>
             )}
           </div>
         )}
 
         {message.role === 'assistant' && sqlQuery && (
-          <div className="sql-block">
-            <div className="sql-block-header">
-              <span>SQL Query</span>
-              <span>PostgreSQL / MySQL</span>
+          <div className="embedded-card">
+            <div className="sql-header">
+              <span>SQL QUERY</span>
+              <span>EXECUTED</span>
             </div>
-            <pre>{sqlQuery}</pre>
+            <div className="sql-block">
+              <pre>{sqlQuery}</pre>
+            </div>
           </div>
         )}
-      </div>
 
-      <div className="message-meta">
-        <span>{message.created_at || ''}</span>
-        {message.role === 'assistant' && (
-          <>
-            {route?.route && <span>• 路由：{String(route.route)}</span>}
-            {activeSkill && <span>• 技能：{activeSkill}</span>}
-            {rowCount > 0 && <span>• 共 {rowCount} 条数据</span>}
-          </>
-        )}
-      </div>
-
-      {message.role === 'assistant' && canRegenerate && (
-        <div className="message-actions" style={{ marginTop: '0.5rem' }}>
-          <button className="btn btn-ghost" style={{ padding: '4px 12px', fontSize: '0.75rem' }} disabled={busy} onClick={() => onRegenerate(message.id)}>
-            重新生成回复
-          </button>
+        <div className="message-meta">
+          <span>{message.created_at}</span>
+          {message.role === 'assistant' && (
+            <>
+              {route?.route && <span>• {String(route.route).toUpperCase()}</span>}
+              {activeSkill && <span>• {activeSkill}</span>}
+            </>
+          )}
+          {message.role === 'assistant' && canRegenerate && (
+            <button 
+              onClick={() => onRegenerate(message.id)} 
+              disabled={busy}
+              style={{ background: 'transparent', border: 'none', color: '#71717a', fontSize: '0.75rem', cursor: 'pointer', padding: 0 }}
+            >
+              重新生成
+            </button>
+          )}
         </div>
-      )}
+      </div>
     </article>
   )
 }

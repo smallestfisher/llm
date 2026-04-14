@@ -496,26 +496,59 @@ export function App() {
   if (!session) {
     return (
       <div className="auth-shell">
-        <form className="auth-panel" onSubmit={handleAuthSubmit}>
-          <h2>BOE Data Copilot</h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="用户名" />
-            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="密码" />
+        <div className="auth-card">
+          <div className="auth-header">
+            <div className="auth-logo">B</div>
+            <h1>BOE Data Copilot</h1>
+            <p>专业的制造业数据问答工作台</p>
           </div>
-          {error ? <div className="error-text" style={{ fontSize: '0.875rem' }}>{error}</div> : null}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <button type="submit" className="btn btn-primary" disabled={busy}>
-              {busy ? '处理中...' : mode === 'login' ? '登录' : '注册'}
+
+          <div className="auth-tabs">
+            <button 
+              className={`auth-tab ${mode === 'login' ? 'active' : ''}`}
+              onClick={() => { setMode('login'); setError(''); }}
+            >
+              登录
             </button>
             <button 
-              type="button" 
-              className="btn btn-ghost" 
-              onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+              className={`auth-tab ${mode === 'register' ? 'active' : ''}`}
+              onClick={() => { setMode('register'); setError(''); }}
             >
-              {mode === 'login' ? '创建账号' : '已有账号？去登录'}
+              注册
             </button>
           </div>
-        </form>
+
+          <form className="auth-form" onSubmit={handleAuthSubmit}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <input 
+                type="text"
+                value={username} 
+                onChange={(event) => setUsername(event.target.value)} 
+                placeholder="用户名" 
+                autoComplete="username"
+                required
+              />
+              <input 
+                type="password" 
+                value={password} 
+                onChange={(event) => setPassword(event.target.value)} 
+                placeholder="密码" 
+                autoComplete="current-password"
+                required
+              />
+            </div>
+            
+            {error && <div className="error-text">{error}</div>}
+
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              {busy ? '处理中...' : mode === 'login' ? '立即登录' : '创建账号'}
+            </button>
+          </form>
+
+          <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            {mode === 'login' ? '初次使用？请切换至注册' : '已有账号？请切换至登录'}
+          </div>
+        </div>
       </div>
     )
   }
@@ -523,22 +556,19 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="sidebar-head">
-          <h1 style={{ fontSize: '1.25rem', margin: 0, fontWeight: 700 }}>BOE Data Copilot</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#94a3b8', fontSize: '0.875rem' }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e' }}></div>
-            {session.username}
+        <div className="sidebar-brand">
+          <div className="brand-logo">B</div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fff' }}>Data Copilot</span>
+            <span style={{ fontSize: '0.7rem', color: '#52525b' }}>{session.username}</span>
           </div>
         </div>
 
-        <div className="nav-list">
-          <button className="btn btn-primary" onClick={handleCreateThread} disabled={busy || runBusy}>
-            + 新建对话
-          </button>
-        </div>
+        <button className="btn btn-primary" onClick={handleCreateThread} disabled={busy || runBusy} style={{ margin: '0 0.75rem 1rem', borderRadius: '12px' }}>
+          + 新建对话
+        </button>
 
-        <h3>功能菜单</h3>
-        <nav className="nav-list">
+        <nav>
           {VIEW_OPTIONS.filter((option) => !option.adminOnly || isAdmin).map((option) => (
             <button
               key={option.key}
@@ -550,7 +580,7 @@ export function App() {
           ))}
         </nav>
 
-        <h3>最近会话</h3>
+        <h3>历史会话</h3>
         <ThreadList
           threads={threads}
           activeThreadId={activeThreadId}
@@ -559,8 +589,8 @@ export function App() {
           onDelete={handleDeleteThread}
         />
 
-        <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-          <button className="nav-item" onClick={handleLogout}>
+        <div style={{ marginTop: 'auto', padding: '1rem 0.75rem 0' }}>
+          <button className="nav-item" onClick={handleLogout} style={{ color: '#ef4444' }}>
             退出登录
           </button>
         </div>
@@ -568,8 +598,8 @@ export function App() {
 
       <main className="main-panel">
         {error && (
-          <div style={{ padding: '1rem 2rem', background: '#fef2f2', borderBottom: '1px solid #fee2e2', color: '#dc2626', fontSize: '0.875rem' }}>
-            系统提示：{error}
+          <div style={{ position: 'absolute', top: '80px', left: '50%', transform: 'translateX(-50%)', z-index: 100, background: '#ef4444', color: '#fff', padding: '0.5rem 1rem', borderRadius: '8px', fontSize: '0.8rem', boxShadow: '0 10px 20px rgba(0,0,0,0.4)' }}>
+            {error}
           </div>
         )}
 
@@ -581,7 +611,7 @@ export function App() {
             activeRun={activeRun}
             renderMainTimeline={() => renderTimeline(activeThread, latestAssistantMessages, busy || runBusy, handleRegenerate, setQuestion)}
             renderRunInspector={() => (
-              <>
+              <div style={{ maxWidth: '800px', margin: '0 auto', width: '100%' }}>
                 <RunPanel
                   activeRun={activeRun}
                   busy={busy}
@@ -590,8 +620,7 @@ export function App() {
                   hasRunningRun={hasRunningRun}
                   onCancel={handleCancelRun}
                 />
-                {renderRunInspector(activeRun)}
-              </>
+              </div>
             )}
             renderComposerHint={composerHint}
             question={question}
