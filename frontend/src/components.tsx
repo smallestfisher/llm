@@ -14,15 +14,17 @@ export function ThreadList({ threads, activeThreadId, busy, onSelect, onDelete }
   return (
     <div className="thread-list">
       {threads.map((thread) => (
-        <div key={thread.public_id} className="thread-row" style={{ position: 'relative' }}>
+        <div key={thread.public_id} className="thread-row">
           <button 
             className={`thread-item ${thread.public_id === activeThreadId ? 'active' : ''}`} 
             onClick={() => onSelect(thread.public_id)}
+            title={thread.title || '新会话'}
           >
-            {thread.title || '新会话'}
+            <span className="thread-item-label">{thread.title || '新会话'}</span>
           </button>
           <button 
             className="thread-delete" 
+            type="button"
             disabled={busy} 
             onClick={() => onDelete(thread.public_id)}
             title="删除会话"
@@ -198,8 +200,22 @@ export function AdminUsersPanel({ adminUsers, busy, drafts, onDraftChange, onTog
               <span className={`status-pill ${user.is_active ? 'active' : ''}`}>{user.is_active ? 'Active' : 'Banned'}</span>
             </div>
             <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
-              <button className="btn-ghost" style={{ flex: 1, padding: '0.6rem' }} onClick={() => onToggleUser(user)}>{user.is_active ? '禁用账号' : '激活账号'}</button>
-              <button className="btn-ghost" style={{ flex: 1, padding: '0.6rem' }} onClick={() => onToggleAdmin(user)}>{user.roles.includes('admin') ? '取消管理' : '提升管理'}</button>
+              <button
+                className={`btn-ghost ${user.is_active ? 'is-danger' : ''}`}
+                style={{ flex: 1, padding: '0.6rem' }}
+                type="button"
+                onClick={() => onToggleUser(user)}
+              >
+                {user.is_active ? '禁用账号' : '激活账号'}
+              </button>
+              <button
+                className={`btn-ghost ${user.roles.includes('admin') ? 'is-danger' : ''}`}
+                style={{ flex: 1, padding: '0.6rem' }}
+                type="button"
+                onClick={() => onToggleAdmin(user)}
+              >
+                {user.roles.includes('admin') ? '取消管理' : '提升管理'}
+              </button>
             </div>
             <div style={{ display: 'flex', gap: '8px', background: 'rgba(0,0,0,0.03)', padding: '4px', borderRadius: '12px' }}>
               <input style={{ flex: 1, padding: '0.6rem', fontSize: '0.85rem', border: 'none', background: 'transparent' }} value={drafts[user.id] || ''} onChange={(e) => onDraftChange(user.id, e.target.value)} placeholder="重置密码" />

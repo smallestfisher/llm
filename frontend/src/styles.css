@@ -110,6 +110,45 @@ input:focus {
 
 .btn-primary:hover { background: #222; transform: translateY(-1px); }
 
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--text-main);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  backdrop-filter: blur(18px);
+  cursor: pointer;
+}
+
+.btn-ghost:hover {
+  background: #fff;
+  border-color: rgba(0, 122, 255, 0.22);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.btn-ghost.is-danger {
+  color: #c93c37;
+  background: rgba(255, 244, 243, 0.92);
+  border-color: rgba(201, 60, 55, 0.14);
+}
+
+.btn-ghost.is-danger:hover {
+  background: #fff1f0;
+  border-color: rgba(201, 60, 55, 0.28);
+  box-shadow: 0 10px 22px rgba(201, 60, 55, 0.12);
+}
+
+.btn-ghost:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
 /* -------------------------------------------------------------------------- */
 /* App Layout (Three Column) */
 /* -------------------------------------------------------------------------- */
@@ -178,13 +217,39 @@ input:focus {
 
 .btn-create:hover { background: #222; }
 
+.thread-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.thread-row {
+  position: relative;
+  width: 100%;
+}
+
 .thread-item {
+  width: 100%;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
   padding: 0.65rem 0.75rem;
+  padding-right: 2.5rem;
+  border: none;
+  background: transparent;
   border-radius: 8px;
   color: var(--text-secondary);
   font-size: 0.875rem;
-  margin-bottom: 2px;
   cursor: pointer;
+  text-align: left;
+}
+
+.thread-item-label {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .thread-item:hover { background: rgba(0,0,0,0.03); }
@@ -334,6 +399,19 @@ textarea {
 }
 
 .thread-row .thread-delete {
+  position: absolute;
+  top: 50%;
+  right: 0.5rem;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
   opacity: 0;
   color: var(--text-desc);
   transition: all 0.2s ease;
@@ -346,4 +424,6 @@ textarea {
 .thread-row .thread-delete:hover {
   opacity: 1;
   color: #ff3b30;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
 }
