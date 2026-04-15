@@ -607,10 +607,12 @@ textarea {
   }
 }
 
-.message-list.is-empty {
-  gap: 0;
-  padding: 0;
+.empty-state-panel {
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
 }
+
 
 @media (max-width: 680px) {
   .app-shell {

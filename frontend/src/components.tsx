@@ -93,13 +93,12 @@ export function ChatPanel({
   const isEmptyState = !showThinking && !(activeThread?.messages?.length)
 
   useEffect(() => {
-    const container = messageListRef.current
-    if (!container) return
-
     if (isEmptyState) {
-      container.scrollTo({ top: 0, behavior: 'auto' })
       return
     }
+
+    const container = messageListRef.current
+    if (!container) return
 
     const frameId = window.requestAnimationFrame(() => {
       container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
@@ -120,15 +119,21 @@ export function ChatPanel({
         </div>
       </header>
 
-      <div ref={messageListRef} className={isEmptyState ? 'message-list is-empty' : 'message-list'}>
-        {renderMainTimeline()}
-        {renderRunInspector()}
-        {showThinking && (
-          <div style={{ padding: '2rem', textAlign: 'center' }}>
-            <span className="thinking-text">思考中...</span>
-          </div>
-        )}
-      </div>
+      {isEmptyState ? (
+        <div className="empty-state-panel">
+          {renderMainTimeline()}
+        </div>
+      ) : (
+        <div ref={messageListRef} className="message-list">
+          {renderMainTimeline()}
+          {renderRunInspector()}
+          {showThinking && (
+            <div style={{ padding: '2rem', textAlign: 'center' }}>
+              <span className="thinking-text">思考中...</span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="composer-area">
         <div className="composer-container">
