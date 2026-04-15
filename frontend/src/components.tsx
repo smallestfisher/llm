@@ -90,6 +90,7 @@ export function ChatPanel({
   canSend,
 }: ChatPanelProps) {
   const messageListRef = useRef<HTMLDivElement | null>(null)
+  const isEmptyState = !showThinking && !(activeThread?.messages?.length)
 
   useEffect(() => {
     const container = messageListRef.current
@@ -114,7 +115,7 @@ export function ChatPanel({
         </div>
       </header>
 
-      <div ref={messageListRef} className="message-list">
+      <div ref={messageListRef} className={isEmptyState ? 'message-list is-empty' : 'message-list'}>
         {renderMainTimeline()}
         {renderRunInspector()}
         {showThinking && (
