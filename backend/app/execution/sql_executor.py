@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import re
 from datetime import date, datetime
@@ -10,9 +9,10 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
 from app.execution.sql_guard import lint_sql
+from app.logging_config import get_logger
 
 
-logger = logging.getLogger("boe.runtime")
+logger = get_logger("boe.runtime")
 SAMPLE_LIMIT = int(os.getenv("SAMPLE_LIMIT", "5000"))
 AUTO_TRUNCATE_ROWS = int(os.getenv("AUTO_TRUNCATE_ROWS", "50000"))
 
@@ -117,7 +117,7 @@ def execute_sql(
             "truncated": truncated,
         }
     except Exception as exc:
-        logger.error("SQL Execution Error: %s", exc)
+        logger.error("SQL Execution Error: {}", exc)
         return {
             "db_result": [],
             "sql_error": str(exc),

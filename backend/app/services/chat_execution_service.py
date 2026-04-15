@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
+from app.logging_config import get_logger
 from app.models import Run, Thread, Turn, utcnow
 from app.services.chat_service import ChatService
 from app.services.run_service import ACTIVE_RUN_STATUSES, RunService
 from app.workflow.executor import execute_chat_workflow
 from app.workflow.state import CancelledError
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 BACKGROUND_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="chat-run")
 
 
@@ -129,7 +129,7 @@ class ChatExecutionService:
             db.commit()
         except CancelledError:
             db.rollback()
-            logger.info("run workflow cancelled", extra={"thread_id": thread_id, "run_id": run_id})
+            logger.bind(thread_id=thread_id, run_id=run_id).info("run workflow cancelled")
             recovery = SessionLocal()
             try:
                 run = recovery.query(Run).filter(Run.public_id == run_id, Run.thread_id == thread_id).first()
@@ -141,7 +141,7 @@ class ChatExecutionService:
                 recovery.close()
         except Exception as exc:
             db.rollback()
-            logger.exception("run workflow failed", extra={"thread_id": thread_id, "turn_id": turn_id, "run_id": run_id})
+            logger.bind(thread_id=thread_id, turn_id=turn_id, run_id=run_id).exception("run workflow failed")
             recovery = SessionLocal()
             try:
                 run = recovery.query(Run).filter(Run.public_id == run_id, Run.thread_id == thread_id).first()

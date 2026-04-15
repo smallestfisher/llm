@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import logging
 import os
 
 from openai import OpenAI
 
+from app.logging_config import get_logger
 
-logger = logging.getLogger("boe.runtime")
+
+logger = get_logger("boe.runtime")
 DEBUG_TRACE = os.getenv("DEBUG_TRACE", "0") == "1"
 LLM_MODEL = os.getenv("LLM_MODEL", "Qwen/Qwen3-14B")
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0"))

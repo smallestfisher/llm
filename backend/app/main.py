@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from app.api.routes import router
 from app.bootstrap import init_backend_db
+from app.logging_config import configure_logging
 
 
 @asynccontextmanager
@@ -15,6 +16,7 @@ async def lifespan(_: FastAPI):
 
 
 def create_app() -> FastAPI:
+    configure_logging()
     app = FastAPI(title="BOE Data Copilot API", lifespan=lifespan)
     app.include_router(router, prefix="/api")
     return app

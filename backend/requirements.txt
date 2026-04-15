@@ -11,3 +11,4 @@ pandas
 jinja2
 python-multipart
 cryptography
+loguru

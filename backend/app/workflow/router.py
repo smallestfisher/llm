@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import json
-import logging
 
-from app.semantic.filters import extract_shared_filters
-from app.semantic.domains import explicit_table_hits, get_tables_for_domain
 from app.execution.llm_client import llm_complete
-from app.workflow.state import RouteDecision
 from app.execution.prompts import build_route_decision_prompt
+from app.logging_config import get_logger
+from app.semantic.domains import explicit_table_hits, get_tables_for_domain
+from app.semantic.filters import extract_shared_filters
+from app.workflow.state import RouteDecision
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 _DOMAIN_KEYWORDS = {
