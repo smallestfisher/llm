@@ -204,7 +204,7 @@ export function App() {
   const hasRunningRun = useMemo(() => getHasRunningRun(activeRun), [activeRun])
   const activeThreadTitle = activeThread?.title || '新对话'
   const hasResolvedThread = !isBootstrappingSession && Boolean(activeThreadId ? activeThread : threads.length === 0)
-  const canSend = Boolean(!busy && !runBusy && activeThreadId)
+  const canSend = Boolean(!busy && !runBusy && session?.token && question.trim())
   const isChatLoading = runBusy || isPolling || hasRunningRun
   const composerHint = hasRunningRun ? '任务运行中，您可以选择停止运行。' : '输入业务数据查询问题...'
 
@@ -377,15 +377,22 @@ export function App() {
   async function handleSendMessage(event: FormEvent) {
     event.preventDefault()
     const nextQuestion = question.trim()
-    if (!session || !activeThreadId || !nextQuestion) return
+    if (!session || !nextQuestion) return
     setBusy(true)
     setError('')
     try {
-      await sendMessage(session.token, activeThreadId, nextQuestion)
+      let targetThreadId = activeThreadId
+      if (!targetThreadId) {
+        const created = await createThread(session.token)
+        targetThreadId = created.public_id
+        setActiveThreadId(targetThreadId)
+      }
+
+      await sendMessage(session.token, targetThreadId, nextQuestion)
       setQuestion('')
       setRunBusy(true)
-      await refreshThreadDetail(session.token, activeThreadId)
-      await refreshThreads(session.token, activeThreadId)
+      await refreshThreadDetail(session.token, targetThreadId)
+      await refreshThreads(session.token, targetThreadId)
     } catch (err) {
       setRunBusy(false)
       setError(err instanceof Error ? err.message : '发送失败')
