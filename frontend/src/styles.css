@@ -542,8 +542,17 @@ textarea {
   justify-content: center;
 }
 
+.empty-thread-wrap {
+  flex: 1;
+  min-height: calc(100dvh - 240px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0 1rem;
+}
+
 .empty-thread-state {
-  margin: clamp(1rem, 5vh, 4rem) auto;
+  margin: 0 auto;
   width: min(100%, 640px);
   text-align: center;
   padding: clamp(1.25rem, 4vw, 4rem) clamp(1rem, 4vw, 2rem);
@@ -635,8 +644,14 @@ textarea {
     padding: 0.5rem;
   }
 
+  .empty-thread-wrap {
+    min-height: calc(100dvh - 210px);
+    align-items: flex-start;
+    padding-bottom: 0.5rem;
+  }
+
   .empty-thread-state {
-    margin: 1rem auto;
+    margin: 0 auto;
   }
 
   .empty-thread-logo {

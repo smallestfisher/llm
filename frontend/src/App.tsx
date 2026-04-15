@@ -102,13 +102,15 @@ function renderQuickSuggestions(onPickQuickSuggestion: (value: string) => void) 
 
 function renderEmptyThread(onPickQuickSuggestion: (value: string) => void) {
   return (
-    <div className="embedded-card empty-thread-state">
+    <div className="empty-thread-wrap">
+      <div className="embedded-card empty-thread-state">
       <div className="auth-logo empty-thread-logo">B</div>
       <h2 className="empty-thread-title">开启业务探索</h2>
       <p className="empty-thread-copy">
         我是您的制造业数据助手。您可以直接查询生产、库存、计划等实时指标，或进行复杂的多维分析。
       </p>
       {renderQuickSuggestions(onPickQuickSuggestion)}
+      </div>
     </div>
   )
 }
