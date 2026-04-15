@@ -96,12 +96,17 @@ export function ChatPanel({
     const container = messageListRef.current
     if (!container) return
 
+    if (isEmptyState) {
+      container.scrollTo({ top: 0, behavior: 'auto' })
+      return
+    }
+
     const frameId = window.requestAnimationFrame(() => {
       container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
     })
 
     return () => window.cancelAnimationFrame(frameId)
-  }, [activeThread?.public_id, activeThread?.messages?.length, showThinking])
+  }, [activeThread?.public_id, activeThread?.messages?.length, showThinking, isEmptyState])
 
   return (
     <div className="chat-panel-shell">
