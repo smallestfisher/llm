@@ -304,6 +304,7 @@ def route_question(question: str) -> RouteDecision:
     rule_decision, scored, explicit_hits, shared_filters = route_question_by_rules(question)
     if not scored:
         return rule_decision
+    logger.info(f"rule_decision: {rule_decision}, explicit_hits: {explicit_hits}")
     if not _should_use_llm_router(rule_decision, scored, question):
         return rule_decision
     llm_decision = _llm_route_question(question, shared_filters, explicit_hits, scored)

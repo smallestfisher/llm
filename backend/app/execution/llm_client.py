@@ -24,9 +24,10 @@ def llm_complete(prompt: str, stream: bool = False) -> str:
         temperature=LLM_TEMPERATURE,
         stream=stream,
     )
+    logger.info(f"============== stream: {stream}, prompt: {prompt}, result_text: {response}")
     if not stream:
         return (response.choices[0].message.content or "").strip()
-
+        
     full_text = ""
     reasoning_started = False
     content_started = False
@@ -85,4 +86,5 @@ def llm_complete(prompt: str, stream: bool = False) -> str:
         print("", flush=True)
     if content_started:
         print("\n", flush=True)
+    logger.info(f"full_text: {full_text}")
     return full_text.strip()

@@ -44,6 +44,10 @@ def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     token = _extract_bearer(authorization)
+    return get_current_user_by_token(token or "", db)
+
+
+def get_current_user_by_token(token: str, db: Session) -> User:
     user_id = parse_token(token or "")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未登录")

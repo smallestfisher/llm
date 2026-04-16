@@ -70,6 +70,13 @@ class ThreadQueryService:
             ],
         }
 
+    def get_thread_detail_by_id(self, db: Session, thread_id: int) -> dict | None:
+        thread = db.query(Thread).filter(Thread.id == thread_id).first()
+        if not thread:
+            return None
+        db.refresh(thread)
+        return self.get_thread_detail(thread)
+
     def latest_run(self, thread: Thread) -> dict | None:
         if not thread.runs:
             return None

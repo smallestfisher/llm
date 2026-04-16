@@ -9,9 +9,11 @@ from app.db import SessionLocal
 from app.logging_config import get_logger
 from app.models import Run, Thread, Turn, utcnow
 from app.services.chat_service import ChatService
+from app.services.thread_event_publisher import thread_event_publisher
 from app.services.run_service import ACTIVE_RUN_STATUSES, RunService
 from app.workflow.executor import execute_chat_workflow
-from app.workflow.state import CancelledError
+from app.workflow.router import route_question
+from app.workflow.state import CancelledError, RouteDecision
 
 logger = get_logger(__name__)
 BACKGROUND_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="chat-run")
@@ -34,6 +36,37 @@ class ChatExecutionService:
             "row_count": result.get("row_count"),
             "truncated": bool(result.get("truncated")),
         }
+
+    def _build_route_snapshot(self, decision: RouteDecision) -> dict:
+        return {
+            "route": decision.route,
+            "confidence": decision.confidence,
+            "matched_domains": decision.matched_domains,
+            "target_tables": decision.target_tables,
+            "filters": decision.filters,
+            "reason": decision.reason,
+        }
+
+    def _publish_thread(self, thread_id: int, *, event: str) -> None:
+        thread_event_publisher.publish_snapshot(thread_id, event=event)
+
+    def _handle_workflow_event(self, db: Session, run: Run, thread: Thread, node: str, payload: dict) -> None:
+        route = payload.get("route") if isinstance(payload, dict) else None
+        route_reason = payload.get("route_reason") if isinstance(payload, dict) else None
+        sql_query = payload.get("sql_query") if isinstance(payload, dict) else None
+        sql_error = payload.get("sql_error") if isinstance(payload, dict) else None
+        self.run_service.update_run_progress(
+            db,
+            run,
+            current_step=node,
+            route=route,
+            route_reason=route_reason,
+            sql_query=sql_query,
+            error_message=sql_error,
+        )
+        thread.updated_at = utcnow()
+        db.commit()
+        self._publish_thread(thread.id, event=node)
 
     def execute_initial_turn(self, db: Session, thread: Thread, question: str) -> dict:
         turn, user_message, run = self.run_service.start_initial_run(db, thread, question)
@@ -79,15 +112,15 @@ class ChatExecutionService:
                 self.run_service.cancel_run(db, run, turn)
                 thread.updated_at = utcnow()
                 db.commit()
+                self._publish_thread(thread.id, event="cancelled")
                 return
-            self.run_service.mark_run_running(db, run, current_step="route")
-            route_snapshot = self.chat_service.attach_route_to_run(run, question)
+            self.run_service.mark_run_running(db, run, current_step="queued")
             thread.updated_at = utcnow()
             db.commit()
+            self._publish_thread(thread.id, event="run_started")
             history = self.chat_service.build_thread_history(db, thread)
-            self.run_service.update_run_progress(db, run, current_step="workflow")
-            thread.updated_at = utcnow()
-            db.commit()
+            initial_decision = route_question(question)
+            route_snapshot = self._build_route_snapshot(initial_decision)
 
             def is_cancelled() -> bool:
                 check_db = SessionLocal()
@@ -97,7 +130,26 @@ class ChatExecutionService:
                 finally:
                     check_db.close()
 
-            workflow_result = asyncio.run(execute_chat_workflow(question, history, is_cancelled=is_cancelled))
+            def on_event(node: str, payload: dict) -> None:
+                event_db = SessionLocal()
+                try:
+                    event_run = event_db.query(Run).filter(Run.public_id == run_id, Run.thread_id == thread_id).first()
+                    event_thread = event_db.query(Thread).filter(Thread.id == thread_id).first()
+                    if not event_run or not event_thread:
+                        return
+                    self._handle_workflow_event(event_db, event_run, event_thread, node, payload or {})
+                finally:
+                    event_db.close()
+
+            workflow_result = asyncio.run(
+                execute_chat_workflow(
+                    question,
+                    history,
+                    initial_decision=initial_decision,
+                    is_cancelled=is_cancelled,
+                    on_event=on_event,
+                )
+            )
             db.refresh(run)
             db.refresh(turn)
             db.refresh(thread)
@@ -105,11 +157,12 @@ class ChatExecutionService:
                 self.run_service.cancel_run(db, run, turn)
                 thread.updated_at = utcnow()
                 db.commit()
+                self._publish_thread(thread.id, event="cancelled")
                 return
             self.run_service.update_run_progress(
                 db,
                 run,
-                current_step="answer",
+                current_step="completed",
                 route=workflow_result.get("route", run.route),
                 route_reason=workflow_result.get("route_reason", run.route_reason),
                 sql_query=workflow_result.get("sql_query", ""),
@@ -127,6 +180,7 @@ class ChatExecutionService:
                 self.run_service.complete_run(db, run, turn, answer, metadata)
             thread.updated_at = utcnow()
             db.commit()
+            self._publish_thread(thread.id, event="run_finished")
         except CancelledError:
             db.rollback()
             logger.bind(thread_id=thread_id, run_id=run_id).info("run workflow cancelled")
@@ -137,6 +191,7 @@ class ChatExecutionService:
                 if run and turn:
                     self.run_service.cancel_run(recovery, run, turn)
                     recovery.commit()
+                    self._publish_thread(thread_id, event="cancelled")
             finally:
                 recovery.close()
         except Exception as exc:
@@ -152,6 +207,7 @@ class ChatExecutionService:
                     if thread:
                         thread.updated_at = utcnow()
                     recovery.commit()
+                    self._publish_thread(thread_id, event="failed")
             finally:
                 recovery.close()
         finally:
@@ -161,6 +217,7 @@ class ChatExecutionService:
         cancel_requested = self.run_service.request_cancel(db, run, turn)
         if not cancel_requested:
             return {"run_id": run.public_id, "status": run.status}
+        self._publish_thread(run.thread_id, event="cancelling")
         return {"run_id": run.public_id, "status": run.status}
 
     def current_run_view(self, run: Run) -> dict:

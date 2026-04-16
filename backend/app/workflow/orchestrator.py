@@ -11,6 +11,12 @@ from app.skills.production import ProductionSkill
 from app.skills.sales import SalesSkill
 
 
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
+
+
+
 _COMPOSER = CrossDomainComposer()
 _SKILLS = {
     "general": GenericSkill(),
@@ -34,8 +40,9 @@ class CompiledOrchestratedWorkflow:
         self._check_cancellation(config)
         question = (inputs.get("question") or "").strip()
         chat_history = list(inputs.get("chat_history") or [])
-        decision = route_question(question)
-
+        decision = inputs.get("initial_decision") or route_question(question)
+        logger.info(f"decision: {decision}")
+        self._emit_event(config, "route_intent", decision.to_state_update())
         yield {"route_intent": decision.to_state_update()}
         self._check_cancellation(config)
 
@@ -67,6 +74,7 @@ class CompiledOrchestratedWorkflow:
 
         if decision.route == "cross_domain":
             compose_result = _COMPOSER.compose(decision)
+            self._emit_event(config, "cross_domain_compose", compose_result.to_state_update())
             yield {"cross_domain_compose": compose_result.to_state_update()}
             if compose_result.use_legacy_fallback:
                 generic_decision = RouteDecision(
@@ -133,7 +141,9 @@ class CompiledOrchestratedWorkflow:
                 if result is not None:
                     executions.append(SkillExecution(domain=domain, plan=plan, result=result))
             merge_result = _COMPOSER.merge(question, executions)
+            self._emit_event(config, "cross_domain_merge", merge_result.to_state_update())
             yield {"cross_domain_merge": merge_result.to_state_update()}
+            self._emit_event(config, "generate_answer", merge_result.final_result.to_final_update())
             yield {"generate_answer": merge_result.final_result.to_final_update()}
             return
 
@@ -198,7 +208,9 @@ class CompiledOrchestratedWorkflow:
     ):
         self._check_cancellation(config)
         yield {"skill_dispatch": dispatch_update or plan.to_state_update()}
+        self._emit_event(config, "skill_dispatch", dispatch_update or plan.to_state_update())
         yield {plan.node_name: {"active_skill": plan.skill_name, "skill_tables": plan.tables}}
+        self._emit_event(config, plan.node_name, {"active_skill": plan.skill_name, "skill_tables": plan.tables})
 
         state = skill.prepare_state(
             question=question,
@@ -208,68 +220,93 @@ class CompiledOrchestratedWorkflow:
 
         self._check_cancellation(config)
         yield {"check_guard": {}}
+        self._emit_event(config, "check_guard", {})
         guard_update = skill.apply_guard(state, config=config)
         state.update(guard_update)
         yield {"check_guard": guard_update}
+        self._emit_event(config, "check_guard", guard_update)
 
         if state.get("intent") == "REJECT":
             if emit_final_node:
                 yield {"generate_answer": {}}
+                self._emit_event(config, "generate_answer", {})
             self._check_cancellation(config)
             final_update = skill.apply_generate_answer(state, config=config)
             state.update(final_update)
             result = skill.build_result(state)
             yield {plan.node_name: result.to_skill_update()}
+            self._emit_event(config, plan.node_name, result.to_skill_update())
             if emit_final_node:
                 yield {"generate_answer": final_update}
+                self._emit_event(config, "generate_answer", final_update)
             result_holder["state"] = state
             result_holder["result"] = result
             return
 
         self._check_cancellation(config)
         yield {"refine_filters": {}}
+        self._emit_event(config, "refine_filters", {})
         refine_update = skill.apply_refine_filters(state)
         state.update(refine_update)
         yield {"refine_filters": refine_update}
+        self._emit_event(config, "refine_filters", refine_update)
 
         self._check_cancellation(config)
         yield {"get_schema": {}}
+        self._emit_event(config, "get_schema", {})
         schema_update = skill.apply_schema(state, question=question, plan=plan)
         state.update(schema_update)
         yield {"get_schema": schema_update}
+        self._emit_event(config, "get_schema", schema_update)
 
         self._check_cancellation(config)
         yield {"write_sql": {}}
+        self._emit_event(config, "write_sql", {})
         write_update = skill.apply_write_sql(state, config=config)
         state.update(write_update)
         yield {"write_sql": write_update}
+        self._emit_event(config, "write_sql", write_update)
 
         while True:
             self._check_cancellation(config)
             yield {"execute_sql": {}}
+            self._emit_event(config, "execute_sql", {})
             execute_update = skill.apply_execute_sql(state, config=config)
             state.update(execute_update)
             yield {"execute_sql": execute_update}
+            self._emit_event(config, "execute_sql", execute_update)
             if not state.get("sql_error") or (state.get("retry_count") or 0) >= 3:
                 break
             
             self._check_cancellation(config)
             yield {"reflect_sql": {}}
+            self._emit_event(config, "reflect_sql", {})
             reflect_update = skill.apply_reflect_sql(state, config=config)
             state.update(reflect_update)
             yield {"reflect_sql": reflect_update}
+            self._emit_event(config, "reflect_sql", reflect_update)
 
         self._check_cancellation(config)
         if emit_final_node:
             yield {"generate_answer": {}}
+            self._emit_event(config, "generate_answer", {})
         final_update = skill.apply_generate_answer(state, config=config)
         state.update(final_update)
         result = skill.build_result(state)
         yield {plan.node_name: result.to_skill_update()}
+        self._emit_event(config, plan.node_name, result.to_skill_update())
         if emit_final_node:
             yield {"generate_answer": final_update}
+            self._emit_event(config, "generate_answer", final_update)
         result_holder["state"] = state
         result_holder["result"] = result
+
+    def _emit_event(self, config: dict | None, node: str, payload: dict) -> None:
+        if not config:
+            return
+        callback = config.get("on_event")
+        if callback:
+            callback(node, payload)
 
 
 class OrchestratedWorkflow:

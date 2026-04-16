@@ -20,6 +20,7 @@ class DemandSkill(BaseSkill):
         "用户说“第二个月/第三个月”时，通常应映射到 NEXT_REQUIREMENT/LAST_REQUIREMENT，不要把“未来第三个月”当作 MONTH 的字面值",
         "用户说“V版”或“P版”时，通常是在指表口径，不等于 PM_VERSION 的具体值；只有出现 2026W03 这类版本号时才过滤 PM_VERSION",
         "如果需要按产品关联，优先通过 FGCODE 关联 product_attributes.product_ID 或 product_mapping.FGCODE",
+        "版本格式为:202604W1P1/202604W1V1,2026:年份,04:月份,W1:第一周,p:p_demand,v:v_demand,1:第一版",
     )
     sql_rules = (
         "涉及 V版、forecast、原始需求或客户预测时优先检查 v_demand",

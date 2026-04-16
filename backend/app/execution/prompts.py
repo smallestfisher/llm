@@ -145,7 +145,7 @@ def build_route_decision_prompt(
 - legacy
 
 规则：
-1. 仅输出 JSON，不要输出解释文字。
+1. 不要包含任何 Markdown 格式标记,仅输出裸JSON,不要输出解释文字。
 2. 只有在问题确实同时涉及多个业务域、且需要联合回答时，才输出 cross_domain。
 3. 如果问题与企业数据查询无关，或无法判断，输出 legacy。
 4. 不要臆造表名，不要输出允许范围之外的 route。
