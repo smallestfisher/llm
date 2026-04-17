@@ -319,6 +319,8 @@ python3 tests/tuning_advisor.py
   当前 11 张表到 5 个技能的映射
 - [BATCH2_BATCH3_OPTIMIZATION_PLAN.md](/home/y/llm/llm/BATCH2_BATCH3_OPTIMIZATION_PLAN.md)
   Batch 2/3 效率与准确度优化计划
+- [REAL_ISSUE_TUNING_PLAYBOOK.md](/home/y/llm/llm/REAL_ISSUE_TUNING_PLAYBOOK.md)
+  基于真实问题的调优方法、步骤与示例
 - [PRODUCTION_TUNING_FLOW.md](/home/y/llm/llm/PRODUCTION_TUNING_FLOW.md)
   生产库字段精调流程
 - [PRODUCTION_TUNING_TEMPLATE.md](/home/y/llm/llm/PRODUCTION_TUNING_TEMPLATE.md)
