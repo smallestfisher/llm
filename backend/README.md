@@ -62,11 +62,18 @@
 - 跨域拆解 / 汇总
 - `check_guard`
 - `refine_filters`
+- `disambiguate`
 - `get_schema`
 - `write_sql`
 - `execute_sql`
 - `reflect_sql`
 - 最终答案生成
+
+说明：
+
+- `disambiguate` 用于“域已确定，但表/口径仍不够明确”的场景
+- 如果判定为需要澄清，当前 `Run` 会直接完成，并返回一条 assistant 追问消息
+- 用户补充后会沿同一线程继续执行，而不是新开独立会话
 
 ## 本地运行
 

@@ -13,6 +13,7 @@ from app.services.chat_service import ChatService
 from app.services.metrics_service import metrics_service
 from app.services.thread_event_publisher import thread_event_publisher
 from app.services.run_service import ACTIVE_RUN_STATUSES, RunService
+from app.workflow.disambiguation import resolve_clarification_reply
 from app.workflow.executor import execute_chat_workflow
 from app.workflow.router import route_question
 from app.workflow.state import CancelledError, RouteDecision
@@ -38,6 +39,11 @@ class ChatExecutionService:
             "row_count": result.get("row_count"),
             "truncated": bool(result.get("truncated")),
             "cache_hit": bool(result.get("cache_hit")),
+            "needs_clarification": bool(result.get("needs_clarification")),
+            "clarification_question": result.get("clarification_question", ""),
+            "clarification_options": result.get("clarification_options") or [],
+            "clarification_type": result.get("clarification_type", ""),
+            "clarification_context": result.get("clarification_context") or {},
         }
 
     def _build_route_snapshot(self, decision: RouteDecision) -> dict:
@@ -66,6 +72,17 @@ class ChatExecutionService:
             "route": workflow_result.get("route") or "",
             "route_reason": workflow_result.get("route_reason") or "",
         }
+
+    def _latest_assistant_metadata(self, thread: Thread) -> dict:
+        assistants = [row for row in thread.messages if row.role == "assistant"]
+        if not assistants:
+            return {}
+        latest = sorted(assistants, key=lambda row: (row.created_at, row.id))[-1]
+        return latest.metadata_dict
+
+    def _resolve_clarification_reply(self, thread: Thread, question: str) -> str:
+        metadata = self._latest_assistant_metadata(thread)
+        return resolve_clarification_reply(metadata, question)
 
     def _publish_thread(self, thread_id: int, *, event: str) -> None:
         thread_event_publisher.publish_snapshot(thread_id, event=event)
@@ -129,6 +146,7 @@ class ChatExecutionService:
                 return
             if question is None:
                 question = turn.user_message.content if turn.user_message else ""
+            question = self._resolve_clarification_reply(thread, question)
             if self.run_service.is_cancel_requested(run):
                 self.run_service.cancel_run(db, run, turn)
                 thread.updated_at = utcnow()
@@ -226,7 +244,7 @@ class ChatExecutionService:
                 self.run_service.cancel_run(db, run, turn)
                 metrics_service.mark_run_finished(run.public_id, status="cancelled", route=initial_decision.route)
             else:
-                if not workflow_result.get("sql_error"):
+                if not workflow_result.get("sql_error") and not workflow_result.get("needs_clarification"):
                     query_cache_service.set(
                         key=cache_key,
                         value=self._cacheable_result(workflow_result),

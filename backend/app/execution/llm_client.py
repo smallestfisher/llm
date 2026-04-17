@@ -13,6 +13,7 @@ logger = get_logger("boe.runtime")
 DEBUG_TRACE = os.getenv("DEBUG_TRACE", "0") == "1"
 LLM_MODEL = os.getenv("LLM_MODEL", "Qwen/Qwen3-14B")
 LLM_MODEL_ROUTER = os.getenv("LLM_MODEL_ROUTER", LLM_MODEL)
+LLM_MODEL_DISAMBIGUATE = os.getenv("LLM_MODEL_DISAMBIGUATE", LLM_MODEL_ROUTER)
 LLM_MODEL_GUARD = os.getenv("LLM_MODEL_GUARD", LLM_MODEL_ROUTER)
 LLM_MODEL_SQL = os.getenv("LLM_MODEL_SQL", LLM_MODEL)
 LLM_MODEL_REFLECT = os.getenv("LLM_MODEL_REFLECT", LLM_MODEL_SQL)
@@ -29,6 +30,7 @@ _openai_client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 def _resolve_model(task: str) -> str:
     model_map = {
         "router": LLM_MODEL_ROUTER,
+        "disambiguate": LLM_MODEL_DISAMBIGUATE,
         "guard": LLM_MODEL_GUARD,
         "sql": LLM_MODEL_SQL,
         "reflect": LLM_MODEL_REFLECT,

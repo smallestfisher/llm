@@ -16,6 +16,7 @@
 - 线程、消息、运行状态、重新生成、停止运行
 - 审计日志
 - 5 个技能的单域问答与跨域问答
+- 歧义口径澄清后继续执行
 - SQL 执行前硬化与 lint
 
 ## 当前 5 个技能
@@ -124,6 +125,7 @@ OPENAI_BASE_URL=http://127.0.0.1:8001/v1
 OPENAI_API_KEY=your-api-key
 LLM_MODEL=Qwen/Qwen3-14B
 LLM_MODEL_ROUTER=Qwen/Qwen3-14B
+LLM_MODEL_DISAMBIGUATE=Qwen/Qwen3-14B
 LLM_MODEL_GUARD=Qwen/Qwen3-14B
 LLM_MODEL_SQL=Qwen/Qwen3-14B
 LLM_MODEL_REFLECT=Qwen/Qwen3-14B
@@ -171,6 +173,7 @@ VITE_SQL_DEBUG_UI_ENABLED=1
 | `OPENAI_API_KEY` | 调用 LLM 网关的密钥 | 必填 |
 | `LLM_MODEL` | 通用默认模型 | 未单独指定阶段模型时回退到它 |
 | `LLM_MODEL_ROUTER` | 路由阶段模型 | 识别领域/路径 |
+| `LLM_MODEL_DISAMBIGUATE` | 澄清判定阶段模型 | 判断是否需要先向用户追问 |
 | `LLM_MODEL_GUARD` | SQL 守卫阶段模型 | 规则校验/轻修正 |
 | `LLM_MODEL_SQL` | SQL 生成阶段模型 | 通常最耗时 |
 | `LLM_MODEL_REFLECT` | SQL 反思修复阶段模型 | SQL 首轮失败时使用 |
@@ -210,6 +213,7 @@ VITE_SQL_DEBUG_UI_ENABLED=1
 
 ```env
 LLM_MODEL_ROUTER=<7b_or_14b>
+LLM_MODEL_DISAMBIGUATE=<7b_or_14b>
 LLM_MODEL_GUARD=<7b_or_14b>
 LLM_MODEL_SQL=<26b>
 LLM_MODEL_REFLECT=<26b>
@@ -226,6 +230,47 @@ QUERY_CACHE_ENABLED=1
 - SQL 候选采用“按需扩展”，首条候选评分高时不会继续扩展，优先省 token。
 - 跨域并发可通过 `CROSS_DOMAIN_MAX_PARALLEL` 控制；单卡 26B 建议设为 `1`。
 - 缓存 key 包含标准化问题、结构化过滤、路由和 schema 版本，可通过 `QUERY_CACHE_SCHEMA_VERSION` 做失效切换。
+
+### 本地 OpenAI 兼容模型示例
+
+如果本地网关提供 OpenAI 兼容接口，例如 `llama.cpp` / `vLLM` / 代理网关，可直接这样配置：
+
+```env
+OPENAI_BASE_URL=http://localhost:8080/v1
+OPENAI_API_KEY=021598Yy.
+LLM_MODEL=gemma-4-26B-A4B
+LLM_MODEL_ROUTER=gemma-4-26B-A4B
+LLM_MODEL_DISAMBIGUATE=gemma-4-26B-A4B
+LLM_MODEL_GUARD=gemma-4-26B-A4B
+LLM_MODEL_SQL=gemma-4-26B-A4B
+LLM_MODEL_REFLECT=gemma-4-26B-A4B
+LLM_MODEL_ANSWER=gemma-4-26B-A4B
+```
+
+说明：
+
+- `OPENAI_BASE_URL` 建议直接写到 `/v1`
+- 后端会在启动时统一加载根目录 `.env`
+- 如果只想把较重阶段放在本地大模型上，可以按阶段分别配置 `LLM_MODEL_*`
+
+## 歧义澄清
+
+当前工作流支持“先澄清，再继续执行”：
+
+- 当问题已经能路由到业务域，但不足以安全决定表或口径时，系统会先返回澄清问题
+- assistant 消息 metadata 会带上 `needs_clarification`、`clarification_type`、`clarification_context`
+- 用户下一轮补充后，后端会把补充说明与上一轮原问题合并，再继续原来的执行链路
+
+当前已接入的场景：
+
+- `demand` 域中类似“预计需求”这类未明确 `P/V` 口径的问题
+
+示例：
+
+1. 用户：`本周预计需求`
+2. assistant：`你这里的“预计需求”是指 V版 forecast，还是 P版承诺需求？`
+3. 用户：`V版`
+4. 系统会自动续成原问题上下文，再继续查询 `v_demand`
 
 ## 管理与运维
 

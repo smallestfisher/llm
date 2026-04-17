@@ -18,6 +18,7 @@ from app.execution.prompts import (
     build_text2sql_prompt,
 )
 from app.skills.profiles import SKILL_PROFILES
+from app.workflow.disambiguation import resolve_disambiguation
 
 SQL_CANDIDATE_COUNT = max(1, min(3, int(os.getenv("SQL_CANDIDATE_COUNT", "2"))))
 SQL_CANDIDATE_EXPAND_SCORE = int(os.getenv("SQL_CANDIDATE_EXPAND_SCORE", "90"))
@@ -98,7 +99,15 @@ class BaseSkill(ABC):
             filters=state.get("intent_filters") or {},
             allowed_tables=self._allowed_tables(),
         )
-        return {"refined_filters": refined_filters}
+        disambiguation = resolve_disambiguation(
+            question=question,
+            route=self.domain,
+            structured_filters=refined_filters,
+            allowed_tables=self._allowed_tables(),
+        )
+        update = disambiguation.to_state_update()
+        update["refined_filters"] = dict(update.get("refined_filters") or refined_filters)
+        return update
 
     def apply_schema(self, state: dict[str, Any], *, question: str, plan: SkillPlan) -> dict[str, Any]:
         primary_table = self._primary_table(question, plan.tables, state.get("refined_filters") or {})
@@ -228,6 +237,22 @@ class BaseSkill(ABC):
                 "truncated": bool(state.get("truncated")),
                 "chat_history": [f"问: {state['question']}\n答: {answer}"],
             }
+        if state.get("needs_clarification"):
+            answer = state.get("clarification_question") or "当前问题仍需补充说明。"
+            return {
+                "final_answer": answer,
+                "chart_data": None,
+                "table_data": [],
+                "table_columns": state.get("table_columns") or [],
+                "row_count": state.get("row_count"),
+                "truncated": bool(state.get("truncated")),
+                "chat_history": [f"问: {state['question']}\n答: {answer}"],
+                "needs_clarification": True,
+                "clarification_question": answer,
+                "clarification_options": list(state.get("clarification_options") or []),
+                "clarification_type": state.get("clarification_type") or "",
+                "clarification_context": dict(state.get("clarification_context") or {}),
+            }
         self._check_cancellation(config)
         return build_answer_payload(
             question=state["question"],
@@ -317,6 +342,11 @@ class BaseSkill(ABC):
             "table_columns": [],
             "row_count": None,
             "truncated": False,
+            "needs_clarification": False,
+            "clarification_question": "",
+            "clarification_options": [],
+            "clarification_type": "",
+            "clarification_context": {},
         }
 
     def _build_result(self, state: dict[str, Any]) -> SkillResult:
@@ -332,6 +362,11 @@ class BaseSkill(ABC):
             row_count=state.get("row_count"),
             truncated=bool(state.get("truncated")),
             chat_history=state.get("chat_history") or [],
+            needs_clarification=bool(state.get("needs_clarification")),
+            clarification_question=state.get("clarification_question") or "",
+            clarification_options=list(state.get("clarification_options") or []),
+            clarification_type=state.get("clarification_type") or "",
+            clarification_context=dict(state.get("clarification_context") or {}),
         )
 
     def build_result(self, state: dict[str, Any]) -> SkillResult:

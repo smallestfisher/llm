@@ -223,3 +223,42 @@ def build_route_decision_prompt(
   "reason": "..."
 }}
 """
+
+
+def build_disambiguation_prompt(
+    *,
+    question: str,
+    route: str,
+    structured_filters: dict,
+    candidate_options: list[dict[str, str]],
+) -> str:
+    return f"""你是企业数据 Copilot 的澄清判定器。
+你的任务不是写 SQL，而是判断当前信息是否足够在候选口径中做出安全选择。
+
+规则：
+1. 只输出裸 JSON，不要输出解释。
+2. 如果问题已经足够明确，请输出 status=resolved，并给出 chosen_option。
+3. 如果信息不足以安全判断，请输出 status=clarify，并给出用户可直接回答的 question。
+4. 如果当前根本不需要澄清，请输出 status=not_needed。
+5. 不要输出候选范围之外的 chosen_option。
+
+当前 route：
+{route}
+
+结构化过滤条件：
+{json.dumps(structured_filters or {}, ensure_ascii=False, indent=2)}
+
+候选口径：
+{json.dumps(candidate_options or [], ensure_ascii=False, indent=2)}
+
+用户问题：
+{question}
+
+输出 JSON 结构：
+{{
+  "status": "resolved | clarify | not_needed",
+  "chosen_option": "candidate_id or empty",
+  "question": "需要澄清时返回给用户的问题，否则为空",
+  "reason": "简短原因"
+}}
+"""

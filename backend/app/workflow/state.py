@@ -61,6 +61,11 @@ class SkillResult:
     row_count: int | None = None
     truncated: bool = False
     chat_history: list[str] = field(default_factory=list)
+    needs_clarification: bool = False
+    clarification_question: str = ""
+    clarification_options: list[str] = field(default_factory=list)
+    clarification_type: str = ""
+    clarification_context: dict[str, Any] = field(default_factory=dict)
 
     def to_skill_update(self) -> dict[str, Any]:
         return {
@@ -71,6 +76,11 @@ class SkillResult:
             "db_result": self.db_result,
             "row_count": self.row_count,
             "truncated": self.truncated,
+            "needs_clarification": self.needs_clarification,
+            "clarification_question": self.clarification_question,
+            "clarification_options": self.clarification_options,
+            "clarification_type": self.clarification_type,
+            "clarification_context": self.clarification_context,
         }
 
     def to_final_update(self) -> dict[str, Any]:
@@ -85,6 +95,11 @@ class SkillResult:
             "row_count": self.row_count,
             "truncated": self.truncated,
             "chat_history": self.chat_history,
+            "needs_clarification": self.needs_clarification,
+            "clarification_question": self.clarification_question,
+            "clarification_options": self.clarification_options,
+            "clarification_type": self.clarification_type,
+            "clarification_context": self.clarification_context,
         }
 
 

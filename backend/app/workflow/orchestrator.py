@@ -300,6 +300,22 @@ class CompiledOrchestratedWorkflow:
         yield {"refine_filters": refine_update}
         self._emit_event(config, "refine_filters", refine_update)
 
+        if state.get("needs_clarification"):
+            if emit_final_node:
+                yield {"generate_answer": {}}
+                self._emit_event(config, "generate_answer", {})
+            final_update = skill.apply_generate_answer(state, config=config)
+            state.update(final_update)
+            result = skill.build_result(state)
+            yield {plan.node_name: result.to_skill_update()}
+            self._emit_event(config, plan.node_name, result.to_skill_update())
+            if emit_final_node:
+                yield {"generate_answer": final_update}
+                self._emit_event(config, "generate_answer", final_update)
+            result_holder["state"] = state
+            result_holder["result"] = result
+            return
+
         self._check_cancellation(config)
         yield {"get_schema": {}}
         self._emit_event(config, "get_schema", {})
@@ -403,6 +419,9 @@ class CompiledOrchestratedWorkflow:
             return skill.build_result(state)
 
         state.update(skill.apply_refine_filters(state))
+        if state.get("needs_clarification"):
+            state.update(skill.apply_generate_answer(state, config=config))
+            return skill.build_result(state)
         state.update(skill.apply_schema(state, question=question, plan=plan))
         state.update(skill.apply_write_sql(state, config=config))
 
