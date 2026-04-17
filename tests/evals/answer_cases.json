@@ -1,0 +1,20 @@
+[
+  {
+    "id": "no_data_guard",
+    "answer": "未查到数据。请确认筛选条件（时间、工厂、产品、版本）后重试。",
+    "must_contain": ["未查到"],
+    "must_not_contain": ["可能", "大概", "推测"]
+  },
+  {
+    "id": "three_section_style",
+    "answer": "结论：本周产出低于计划。\n关键数字：1) 计划 12000，实际 10800；2) 差异 -1200；3) 差异率 -10.0%。\n风险/建议：关注 B4_BJ 线别波动。",
+    "must_contain": ["结论", "关键数字"],
+    "must_not_contain": ["我猜", "不确定"]
+  },
+  {
+    "id": "evidence_binding_style",
+    "answer": "结论：销量环比下降。\n关键数字：来自 report_month=2026-03 的 sales_qty=22000，较 2026-02 的 24800 下降 11.3%。\n风险/建议：复核需求与排产匹配。",
+    "must_contain": ["来自", "sales_qty"],
+    "must_not_contain": ["编造", "假设"]
+  }
+]

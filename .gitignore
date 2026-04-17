@@ -29,3 +29,12 @@ core/config/semantic_db/
 
 # Frontend dependencies and build output
 frontend/node_modules/
+frontend/dist/
+
+# Runtime metric snapshots and eval artifacts
+tests/evals/*
+!tests/evals/thresholds.json
+!tests/evals/answer_cases.json
+
+# Local metrics persistence
+backend/data/*.jsonl

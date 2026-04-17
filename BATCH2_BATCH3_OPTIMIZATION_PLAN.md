@@ -8,8 +8,12 @@
 2. [x] Batch 2.2 SQL 候选重排（默认 2 候选，lint + 轻执行评分选优）
 3. [x] Batch 2.3 回答证据绑定（空结果强制“未查到数据”，补充证据映射）
 4. [x] Batch 3.1 查询缓存层（TTL 内存缓存首版，命中跳过工作流执行）
-5. [ ] Batch 3.2 评测闭环（待补 route/sql/answer 离线评测集与门槛）
-6. [ ] Batch 3.3 可观测性面板（待补节点级指标聚合与告警）
+5. [x] Batch 3.2 评测闭环（`tests/eval_runner.py` + `tests/evals/thresholds.json` + `answer_cases.json`）
+6. [x] Batch 3.3 可观测性面板（窗口统计 + 告警 + 历史趋势接口 + 前端趋势展示）
+7. [x] Batch 3.3 Phase 1：节点耗时/失败率/缓存命中内存聚合 + `/api/admin/metrics` 查询接口
+8. [x] Batch 3.3 Phase 2：`window_sec` 窗口统计（run/cache/route）+ 节点 `p95_ms/failure_rate` + 前端指标看板自动刷新
+9. [x] Batch 3 收尾工具：`metrics_snapshot.py`、`generate_acceptance_report.py`、`tuning_advisor.py`
+10. [x] Batch 3 收尾稳态化：`metrics_service` 单测补齐 + 评测运行产物忽略策略落地
 
 ### 2026-04-17 增补（面向 26B 混合模型）
 

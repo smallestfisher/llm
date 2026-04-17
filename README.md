@@ -147,6 +147,15 @@ QUERY_CACHE_MAX_SIZE=2000
 QUERY_CACHE_TTL_SHORT=180
 QUERY_CACHE_TTL_LONG=600
 QUERY_CACHE_SCHEMA_VERSION=v1
+METRICS_PERSIST_ENABLED=1
+METRICS_PERSIST_PATH=backend/data/metrics_events.jsonl
+METRICS_DEFAULT_WINDOW_SEC=900
+METRICS_MAX_EVENT_AGE_SEC=86400
+ALERT_FAILURE_RATE_THRESHOLD=0.2
+ALERT_P95_MS_THRESHOLD=15000
+ALERT_CACHE_HIT_RATE_MIN=0.2
+ALERT_MIN_SAMPLES=20
+ALERT_COOLDOWN_SEC=300
 ```
 
 ### 26B 混合模型推荐参数
@@ -185,6 +194,13 @@ python3 manage_users.py enable alice
 python3 manage_users.py reset-password alice new-password
 ```
 
+管理员可通过接口查看运行指标快照：
+
+- `GET /api/admin/metrics?window_sec=900`
+- `GET /api/admin/metrics/history?window_sec=86400&bucket_sec=300&limit=96`
+- 指标包含：`run_status`、`route_counts`、`cache(hit/miss/hit_rate)`、各节点 `avg_ms/p95_ms/max_ms/failure_count/failure_rate`
+- `metrics` 接口返回 `alerts`，用于告警提示与面板展示
+
 ## 初始化样例业务表
 
 如果需要一套样例业务表，可以运行：
@@ -218,6 +234,34 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 ```bash
 PYTHONPATH=. python3 tests/eval_runner.py
 ```
+
+轻量冒烟回归（避免网络波动导致长时间阻塞）：
+
+```bash
+PYTHONPATH=. python3 tests/eval_runner.py --no-strict --max-cases 1 --case-timeout-sec 8
+```
+
+导出运行指标快照：
+
+```bash
+PYTHONPATH=. python3 tests/metrics_snapshot.py --output tests/evals/metrics_snapshot.json
+```
+
+生成验收报告：
+
+```bash
+python3 tests/generate_acceptance_report.py
+```
+
+生成参数建议：
+
+```bash
+python3 tests/tuning_advisor.py
+```
+
+说明：
+- `tests/evals/thresholds.json`、`tests/evals/answer_cases.json` 为配置文件，建议纳入版本管理。
+- `tests/evals/report_latest.json`、`metrics_snapshot.json`、`acceptance_latest.md`、`tuning_recommendations.env` 为运行产物，默认仅本地使用。
 
 ## 文档
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, issue_token
@@ -13,6 +13,7 @@ from app.services.admin_service import AdminService
 from app.services.audit_service import AuditService
 from app.services.auth_service import AuthService
 from app.services.chat_execution_service import ChatExecutionService
+from app.services.metrics_service import metrics_service
 from app.services.thread_query_service import ThreadQueryService
 from app.services.thread_service import ThreadService
 from app.services.user_admin_query_service import UserAdminQueryService
@@ -160,7 +161,6 @@ def get_me(current_user: User = Depends(get_current_user)) -> dict:
         "username": current_user.username,
         "roles": auth_service.role_names(current_user),
         "is_active": current_user.is_active,
-        "token": issue_token(current_user),
     }
 
 
@@ -220,3 +220,23 @@ def admin_update_roles(user_id: int, payload: UserRoleUpdateRequest, current_use
 def admin_audits(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     _require_admin(current_user)
     return {"items": user_admin_query_service.list_audits(db)}
+
+
+@router.get("/admin/metrics")
+def admin_metrics(
+    current_user: User = Depends(get_current_user),
+    window_sec: int = Query(900, ge=60, le=86400),
+) -> dict:
+    _require_admin(current_user)
+    return metrics_service.snapshot(window_sec=window_sec)
+
+
+@router.get("/admin/metrics/history")
+def admin_metrics_history(
+    current_user: User = Depends(get_current_user),
+    window_sec: int = Query(86400, ge=300, le=604800),
+    bucket_sec: int = Query(300, ge=60, le=3600),
+    limit: int = Query(96, ge=1, le=500),
+) -> dict:
+    _require_admin(current_user)
+    return metrics_service.history(window_sec=window_sec, bucket_sec=bucket_sec, limit=limit)

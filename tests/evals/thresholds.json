@@ -1,0 +1,10 @@
+{
+  "min_cases": 10,
+  "thresholds": {
+    "route_top1_accuracy": 0.8,
+    "sql_field_hit_rate": 0.75,
+    "first_sql_success_rate": 0.7,
+    "no_data_guard_rate": 0.95,
+    "answer_rule_case_pass_rate": 1.0
+  }
+}

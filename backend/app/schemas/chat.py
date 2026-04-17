@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, constr
+
+
+QuestionStr = constr(strip_whitespace=True, min_length=1, max_length=4000)
+RunIdStr = constr(strip_whitespace=True, min_length=1, max_length=64)
 
 
 class SendMessageRequest(BaseModel):
-    question: str
+    question: QuestionStr
 
 
 class RegenerateTurnRequest(BaseModel):
@@ -12,7 +16,7 @@ class RegenerateTurnRequest(BaseModel):
 
 
 class CancelRunRequest(BaseModel):
-    run_id: str
+    run_id: RunIdStr
 
 
 class RouteSnapshotResponse(BaseModel):
@@ -21,15 +25,15 @@ class RouteSnapshotResponse(BaseModel):
     matched_domains: list[str] = []
     target_tables: list[str] = []
     filters: dict = {}
-    reason: str = ""
+    reason: str = ''
 
 
 class MessageMetadataResponse(BaseModel):
     route: RouteSnapshotResponse | dict
-    route_reason: str = ""
-    active_skill: str = ""
-    sql_query: str = ""
-    sql_error: str = ""
+    route_reason: str = ''
+    active_skill: str = ''
+    sql_query: str = ''
+    sql_error: str = ''
     columns: list = []
     rows: list = []
     row_count: int | None = None

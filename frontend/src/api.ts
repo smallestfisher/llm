@@ -8,6 +8,13 @@ export type AuthResponse = {
   is_active?: boolean
 }
 
+export type MeResponse = {
+  id: number
+  username: string
+  roles: string[]
+  is_active: boolean
+}
+
 export type ThreadSummary = {
   id: number
   public_id: string
@@ -79,6 +86,65 @@ export type AuditRow = {
   actor_username: string | null
 }
 
+export type MetricsNodeRow = {
+  count: number
+  avg_ms: number
+  max_ms: number
+  failure_count: number
+  p95_ms?: number
+  failure_rate?: number
+}
+
+export type MetricsWindow = {
+  window_sec: number
+  run_status: Record<string, number>
+  route_counts: Record<string, number>
+  cache: {
+    hit: number
+    miss: number
+    hit_rate: number
+  }
+  nodes: Record<string, MetricsNodeRow>
+}
+
+export type MetricsAlert = {
+  level: string
+  code: string
+  value: number
+  threshold: number
+  message: string
+}
+
+export type MetricsHistoryPoint = {
+  ts: number
+  run_count: number
+  failure_rate: number
+  p95_run_ms: number
+  cache_hit_rate: number
+}
+
+export type AdminMetricsHistoryResponse = {
+  window_sec: number
+  bucket_sec: number
+  points: MetricsHistoryPoint[]
+}
+
+export type AdminMetricsResponse = {
+  uptime_sec: number
+  inflight_runs: number
+  run_status: Record<string, number>
+  route_counts: Record<string, number>
+  cache: {
+    hit: number
+    miss: number
+    hit_rate: number
+  }
+  nodes: Record<string, MetricsNodeRow>
+  window_sec?: number
+  window?: MetricsWindow
+  alerts?: MetricsAlert[]
+}
+
 function authHeaders(token: string) {
   return {
     Authorization: `Bearer ${token}`,
@@ -118,9 +184,9 @@ export async function login(username: string, password: string): Promise<AuthRes
   return requireJson<AuthResponse>(response, '登录失败')
 }
 
-export async function fetchMe(token: string): Promise<AuthResponse> {
+export async function fetchMe(token: string): Promise<MeResponse> {
   const response = await fetch(`${API_BASE}/me`, { headers: authHeaders(token) })
-  return requireJson<AuthResponse>(response, '获取当前用户失败')
+  return requireJson<MeResponse>(response, '获取当前用户失败')
 }
 
 export async function listThreads(token: string): Promise<ThreadSummary[]> {
@@ -243,4 +309,28 @@ export async function listAudits(token: string): Promise<{ items: AuditRow[] }> 
     headers: authHeaders(token),
   })
   return requireJson(response, '获取审计日志失败')
+}
+
+export async function listAdminMetrics(token: string, windowSec = 900): Promise<AdminMetricsResponse> {
+  const response = await fetch(`${API_BASE}/admin/metrics?window_sec=${encodeURIComponent(String(windowSec))}`, {
+    headers: authHeaders(token),
+  })
+  return requireJson(response, '获取运行指标失败')
+}
+
+export async function listAdminMetricsHistory(
+  token: string,
+  windowSec = 86400,
+  bucketSec = 300,
+  limit = 96,
+): Promise<AdminMetricsHistoryResponse> {
+  const query = new URLSearchParams({
+    window_sec: String(windowSec),
+    bucket_sec: String(bucketSec),
+    limit: String(limit),
+  }).toString()
+  const response = await fetch(`${API_BASE}/admin/metrics/history?${query}`, {
+    headers: authHeaders(token),
+  })
+  return requireJson(response, '获取指标趋势失败')
 }

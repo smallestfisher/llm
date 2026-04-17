@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
+  listAdminMetricsHistory,
+  listAdminMetrics,
   cancelRun,
   changePassword,
   createThread,
@@ -17,11 +19,13 @@ import {
   updateUserRoles,
   updateUserStatus,
   type AuditRow,
+  type AdminMetricsHistoryResponse,
+  type AdminMetricsResponse,
   type ThreadDetail,
   type ThreadSummary,
   type UserRow,
 } from './api'
-import { AdminUsersPanel, AuditPanel, ChatPanel, MessageCard, ProfilePanel, RunPanel, ThreadList } from './components'
+import { AdminMetricsPanel, AdminUsersPanel, AuditPanel, ChatPanel, MessageCard, ProfilePanel, RunPanel, ThreadList } from './components'
 import { formatDisplayDate, getActiveRun, getActiveRunDetail, getHasRunningRun, getLatestAssistantMessageIds, getRunSteps, isRegeneratableMessage } from './view-models'
 
 const QUICK_SUGGESTIONS = [
@@ -35,9 +39,11 @@ const VIEW_OPTIONS: Array<{ key: View; label: string; adminOnly?: boolean }> = [
   { key: 'profile', label: '个人设置' },
   { key: 'admin-users', label: '用户管理', adminOnly: true },
   { key: 'admin-audits', label: '审计日志', adminOnly: true },
+  { key: 'admin-metrics', label: '运行指标', adminOnly: true },
 ]
 
 const RUN_POLL_INTERVAL_MS = 1200
+const METRICS_POLL_INTERVAL_MS = 5000
 
 type Session = {
   token: string
@@ -45,7 +51,7 @@ type Session = {
   roles: string[]
 }
 
-type View = 'chat' | 'profile' | 'admin-users' | 'admin-audits'
+type View = 'chat' | 'profile' | 'admin-users' | 'admin-audits' | 'admin-metrics'
 
 function getSessionStorageKey() {
   return 'boe-rewrite-session'
@@ -76,6 +82,11 @@ function normalizeSession(auth: { token: string; username: string; roles: string
 
 function isAdminSession(session: Session | null) {
   return session?.roles.includes('admin') ?? false
+}
+
+function sameRoles(left: string[], right: string[]) {
+  if (left.length !== right.length) return false
+  return left.every((role, index) => role === right[index])
 }
 
 function resolveNextThreadId(rows: ThreadSummary[], preferredThreadId: string, currentThreadId: string) {
@@ -195,8 +206,15 @@ export function App() {
   const [profileNewPassword, setProfileNewPassword] = useState('')
   const [adminUsers, setAdminUsers] = useState<UserRow[]>([])
   const [audits, setAudits] = useState<AuditRow[]>([])
+  const [adminMetrics, setAdminMetrics] = useState<AdminMetricsResponse | null>(null)
+  const [adminMetricsHistory, setAdminMetricsHistory] = useState<AdminMetricsHistoryResponse | null>(null)
+  const [metricsWindowSec, setMetricsWindowSec] = useState(900)
+  const [metricsRefreshing, setMetricsRefreshing] = useState(false)
   const [adminPasswordDrafts, setAdminPasswordDrafts] = useState<Record<number, string>>({})
   const pollTimerRef = useRef<number | null>(null)
+  const activeThreadIdRef = useRef('')
+  const threadDetailRequestIdRef = useRef(0)
+  const threadListRequestIdRef = useRef(0)
 
   const isAdmin = useMemo(() => isAdminSession(session), [session])
   const activeRun = useMemo(() => getActiveRun(activeThread), [activeThread])
@@ -218,6 +236,10 @@ export function App() {
   }, [])
 
   useEffect(() => {
+    activeThreadIdRef.current = activeThreadId
+  }, [activeThreadId])
+
+  useEffect(() => {
     if (!session?.token) return
     void bootstrapSession(session.token)
   }, [session?.token])
@@ -232,10 +254,23 @@ export function App() {
     }
     setIsPolling(true)
     pollTimerRef.current = window.setInterval(() => {
-      void refreshThreadDetail(session.token, activeThreadId)
+      const latestThreadId = activeThreadIdRef.current
+      if (!latestThreadId) return
+      void refreshThreadDetail(session.token, latestThreadId)
     }, RUN_POLL_INTERVAL_MS)
     return () => stopPolling()
   }, [activeThreadId, hasRunningRun, session?.token])
+
+  useEffect(() => {
+    if (!session?.token || !isAdmin || view !== 'admin-metrics') return
+
+    void refreshMetricsOnly(session.token, metricsWindowSec, true)
+    const timer = window.setInterval(() => {
+      void refreshMetricsOnly(session.token, metricsWindowSec, true)
+    }, METRICS_POLL_INTERVAL_MS)
+
+    return () => window.clearInterval(timer)
+  }, [session?.token, isAdmin, view, metricsWindowSec])
 
   function stopPolling() {
     if (pollTimerRef.current !== null) {
@@ -251,8 +286,18 @@ export function App() {
     setError('')
     try {
       const me = await fetchMe(token)
-      const nextSession = normalizeSession(me)
-      setSession(nextSession)
+      const nextSession: Session = { token, username: me.username, roles: me.roles }
+      setSession((current) => {
+        if (
+          current &&
+          current.token === nextSession.token &&
+          current.username === nextSession.username &&
+          sameRoles(current.roles, nextSession.roles)
+        ) {
+          return current
+        }
+        return nextSession
+      })
       writeSession(nextSession)
       await refreshThreads(nextSession.token, '')
       if (isAdminSession(nextSession)) {
@@ -260,6 +305,8 @@ export function App() {
       } else {
         setAdminUsers([])
         setAudits([])
+        setAdminMetrics(null)
+        setAdminMetricsHistory(null)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : '初始化失败'
@@ -272,7 +319,14 @@ export function App() {
   }
 
   async function refreshThreadDetail(token: string, publicId: string) {
+    const requestId = ++threadDetailRequestIdRef.current
     const detail = await fetchThread(token, publicId)
+    if (requestId !== threadDetailRequestIdRef.current) {
+      return null
+    }
+    if (activeThreadIdRef.current && detail.public_id !== activeThreadIdRef.current) {
+      return detail
+    }
     setActiveThread(detail)
     if (!getHasRunningRun(getActiveRun(detail))) {
       stopPolling()
@@ -285,15 +339,21 @@ export function App() {
   }
 
   async function refreshThreads(token: string, preferredThreadId: string) {
+    const requestId = ++threadListRequestIdRef.current
     const rows = await listThreads(token)
+    if (requestId !== threadListRequestIdRef.current) {
+      return
+    }
     setThreads(rows)
-    const nextThreadId = resolveNextThreadId(rows, preferredThreadId, activeThreadId)
+    const nextThreadId = resolveNextThreadId(rows, preferredThreadId, activeThreadIdRef.current)
     if (!nextThreadId) {
       stopPolling()
+      activeThreadIdRef.current = ''
       setActiveThreadId('')
       setActiveThread(null)
       return
     }
+    activeThreadIdRef.current = nextThreadId
     setActiveThreadId(nextThreadId)
     await refreshThreadDetail(token, nextThreadId)
   }
@@ -302,11 +362,45 @@ export function App() {
     if (!roles.includes('admin')) {
       setAdminUsers([])
       setAudits([])
+      setAdminMetrics(null)
+      setAdminMetricsHistory(null)
       return
     }
-    const [usersResponse, auditsResponse] = await Promise.all([listAdminUsers(token), listAudits(token)])
+    const historyWindowSec = Math.max(metricsWindowSec * 8, 3600)
+    const historyBucketSec = metricsWindowSec <= 300 ? 120 : metricsWindowSec <= 900 ? 300 : 600
+    const [usersResponse, auditsResponse, metricsResponse, metricsHistoryResponse] = await Promise.all([
+      listAdminUsers(token),
+      listAudits(token),
+      listAdminMetrics(token, metricsWindowSec),
+      listAdminMetricsHistory(token, historyWindowSec, historyBucketSec, 120),
+    ])
     setAdminUsers(usersResponse.items)
     setAudits(auditsResponse.items)
+    setAdminMetrics(metricsResponse)
+    setAdminMetricsHistory(metricsHistoryResponse)
+  }
+
+  async function refreshMetricsOnly(token: string, windowSec = metricsWindowSec, silent = false) {
+    setMetricsRefreshing(true)
+    if (!silent) {
+      setError('')
+    }
+    try {
+      const historyWindowSec = Math.max(windowSec * 8, 3600)
+      const historyBucketSec = windowSec <= 300 ? 120 : windowSec <= 900 ? 300 : 600
+      const [metricsResponse, metricsHistoryResponse] = await Promise.all([
+        listAdminMetrics(token, windowSec),
+        listAdminMetricsHistory(token, historyWindowSec, historyBucketSec, 120),
+      ])
+      setAdminMetrics(metricsResponse)
+      setAdminMetricsHistory(metricsHistoryResponse)
+    } catch (err) {
+      if (!silent) {
+        setError(err instanceof Error ? err.message : '获取运行指标失败')
+      }
+    } finally {
+      setMetricsRefreshing(false)
+    }
   }
 
   async function handleAuthSubmit(event: FormEvent) {
@@ -366,6 +460,7 @@ export function App() {
     try {
       stopPolling()
       setRunBusy(false)
+      activeThreadIdRef.current = publicId
       setActiveThreadId(publicId)
       await refreshThreadDetail(session.token, publicId)
       setView('chat')
@@ -387,6 +482,7 @@ export function App() {
       if (!targetThreadId) {
         const created = await createThread(session.token)
         targetThreadId = created.public_id
+        activeThreadIdRef.current = targetThreadId
         setActiveThreadId(targetThreadId)
       }
 
@@ -506,6 +602,7 @@ export function App() {
       if (!targetThreadId) {
         const created = await createThread(session.token)
         targetThreadId = created.public_id
+        activeThreadIdRef.current = targetThreadId
         setActiveThreadId(targetThreadId)
         await refreshThreads(session.token, targetThreadId)
       }
@@ -524,6 +621,9 @@ export function App() {
 
   function handleLogout() {
     stopPolling()
+    threadDetailRequestIdRef.current += 1
+    threadListRequestIdRef.current += 1
+    activeThreadIdRef.current = ''
     setRunBusy(false)
     setSession(null)
     setThreads([])
@@ -531,6 +631,9 @@ export function App() {
     setActiveThread(null)
     setAdminUsers([])
     setAudits([])
+    setAdminMetrics(null)
+    setAdminMetricsHistory(null)
+    setMetricsRefreshing(false)
     setAdminPasswordDrafts({})
     setView('chat')
     clearSessionStorage()
@@ -629,6 +732,13 @@ export function App() {
             >
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
             </div>
+            <div
+              className={`rail-item ${view === 'admin-metrics' ? 'active' : ''}`}
+              title="指标"
+              onClick={() => setView('admin-metrics')}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="19" x2="20" y2="19"></line><rect x="6" y="10" width="3" height="7"></rect><rect x="11" y="6" width="3" height="11"></rect><rect x="16" y="13" width="3" height="4"></rect></svg>
+            </div>
           </>
         )}
         <div style={{ marginTop: 'auto' }} className="rail-item" title="退出" onClick={handleLogout}>
@@ -721,6 +831,25 @@ export function App() {
         ) : null}
 
         {view === 'admin-audits' && isAdmin ? <AuditPanel audits={audits} /> : null}
+        {view === 'admin-metrics' && isAdmin ? (
+          <AdminMetricsPanel
+            metrics={adminMetrics}
+            history={adminMetricsHistory}
+            refreshing={metricsRefreshing}
+            windowSec={metricsWindowSec}
+            onWindowChange={(value) => {
+              setMetricsWindowSec(value)
+              if (session?.token) {
+                void refreshMetricsOnly(session.token, value, false)
+              }
+            }}
+            onRefresh={() => {
+              if (session?.token) {
+                void refreshMetricsOnly(session.token, metricsWindowSec, false)
+              }
+            }}
+          />
+        ) : null}
       </main>
     </div>
   )

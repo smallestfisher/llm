@@ -10,6 +10,7 @@ from app.logging_config import get_logger
 from app.models import Run, Thread, Turn, utcnow
 from app.services.cache_service import query_cache_service
 from app.services.chat_service import ChatService
+from app.services.metrics_service import metrics_service
 from app.services.thread_event_publisher import thread_event_publisher
 from app.services.run_service import ACTIVE_RUN_STATUSES, RunService
 from app.workflow.executor import execute_chat_workflow
@@ -74,6 +75,7 @@ class ChatExecutionService:
         route_reason = payload.get("route_reason") if isinstance(payload, dict) else None
         sql_query = payload.get("sql_query") if isinstance(payload, dict) else None
         sql_error = payload.get("sql_error") if isinstance(payload, dict) else None
+        metrics_service.record_node_event(run.public_id, node=node, payload=payload if isinstance(payload, dict) else {})
         self.run_service.update_run_progress(
             db,
             run,
@@ -131,18 +133,22 @@ class ChatExecutionService:
                 self.run_service.cancel_run(db, run, turn)
                 thread.updated_at = utcnow()
                 db.commit()
+                metrics_service.mark_run_finished(run.public_id, status="cancelled", route=run.route)
                 self._publish_thread(thread.id, event="cancelled")
                 return
             self.run_service.mark_run_running(db, run, current_step="queued")
             thread.updated_at = utcnow()
             db.commit()
             self._publish_thread(thread.id, event="run_started")
+            metrics_service.mark_run_started(run.public_id)
             history = self.chat_service.build_thread_history(db, thread)
             initial_decision = route_question(question)
+            metrics_service.mark_run_route(run.public_id, initial_decision.route)
             route_snapshot = self._build_route_snapshot(initial_decision)
             cache_key = query_cache_service.build_key(question=question, decision=initial_decision)
             cached_result = query_cache_service.get(cache_key)
             if cached_result:
+                metrics_service.record_cache_hit()
                 cached_result["cache_hit"] = True
                 self.run_service.update_run_progress(
                     db,
@@ -160,8 +166,10 @@ class ChatExecutionService:
                 self.run_service.complete_run(db, run, turn, answer, metadata)
                 thread.updated_at = utcnow()
                 db.commit()
+                metrics_service.mark_run_finished(run.public_id, status="completed", route=initial_decision.route)
                 self._publish_thread(thread.id, event="run_finished")
                 return
+            metrics_service.record_cache_miss()
 
             def is_cancelled() -> bool:
                 check_db = SessionLocal()
@@ -198,6 +206,7 @@ class ChatExecutionService:
                 self.run_service.cancel_run(db, run, turn)
                 thread.updated_at = utcnow()
                 db.commit()
+                metrics_service.mark_run_finished(run.public_id, status="cancelled", route=initial_decision.route)
                 self._publish_thread(thread.id, event="cancelled")
                 return
             self.run_service.update_run_progress(
@@ -215,6 +224,7 @@ class ChatExecutionService:
             db.refresh(turn)
             if self.run_service.is_cancel_requested(run):
                 self.run_service.cancel_run(db, run, turn)
+                metrics_service.mark_run_finished(run.public_id, status="cancelled", route=initial_decision.route)
             else:
                 if not workflow_result.get("sql_error"):
                     query_cache_service.set(
@@ -225,6 +235,11 @@ class ChatExecutionService:
                 metadata = self._workflow_result_to_metadata(workflow_result, route_snapshot)
                 answer = workflow_result.get("final_answer") or f"[rewrite] 未生成最终回答：{question}"
                 self.run_service.complete_run(db, run, turn, answer, metadata)
+                metrics_service.mark_run_finished(
+                    run.public_id,
+                    status="completed",
+                    route=workflow_result.get("route") or initial_decision.route,
+                )
             thread.updated_at = utcnow()
             db.commit()
             self._publish_thread(thread.id, event="run_finished")
@@ -238,6 +253,7 @@ class ChatExecutionService:
                 if run and turn:
                     self.run_service.cancel_run(recovery, run, turn)
                     recovery.commit()
+                    metrics_service.mark_run_finished(run.public_id, status="cancelled", route=run.route)
                     self._publish_thread(thread_id, event="cancelled")
             finally:
                 recovery.close()
@@ -254,6 +270,7 @@ class ChatExecutionService:
                     if thread:
                         thread.updated_at = utcnow()
                     recovery.commit()
+                    metrics_service.mark_run_finished(run.public_id, status="failed", route=run.route)
                     self._publish_thread(thread_id, event="failed")
             finally:
                 recovery.close()

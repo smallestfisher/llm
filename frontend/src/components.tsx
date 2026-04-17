@@ -1,5 +1,5 @@
 import { useEffect, useRef, type FormEvent, type ReactNode } from 'react'
-import type { AuditRow, MessageRow, RunRow, ThreadDetail, ThreadSummary, UserRow } from './api'
+import type { AdminMetricsHistoryResponse, AdminMetricsResponse, AuditRow, MessageRow, RunRow, ThreadDetail, ThreadSummary, UserRow } from './api'
 import { formatDisplayDate, getRunStatusLabel, getRunStatusTone, getRunStepLabel, type RunStepState } from './view-models'
 
 type ThreadListProps = {
@@ -331,6 +331,232 @@ export function AuditPanel({ audits }: AuditPanelProps) {
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+type AdminMetricsPanelProps = {
+  metrics: AdminMetricsResponse | null
+  history: AdminMetricsHistoryResponse | null
+  refreshing: boolean
+  windowSec: number
+  onWindowChange: (value: number) => void
+  onRefresh: () => void
+}
+
+function formatSeconds(seconds: number) {
+  if (!seconds) return '0s'
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const remain = seconds % 60
+  if (minutes < 60) return `${minutes}m ${remain}s`
+  const hours = Math.floor(minutes / 60)
+  return `${hours}h ${minutes % 60}m`
+}
+
+function renderCounterRows(data: Record<string, number>, emptyText: string) {
+  const entries = Object.entries(data || {}).sort((left, right) => right[1] - left[1])
+  if (!entries.length) {
+    return <div style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{emptyText}</div>
+  }
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+      <thead>
+        <tr style={{ background: '#f8f8fa', color: 'var(--text-secondary)' }}>
+          <th style={{ padding: '0.9rem 1rem', textAlign: 'left', fontWeight: 700 }}>键</th>
+          <th style={{ padding: '0.9rem 1rem', textAlign: 'right', fontWeight: 700 }}>次数</th>
+        </tr>
+      </thead>
+      <tbody>
+        {entries.map(([key, value]) => (
+          <tr key={key} style={{ borderTop: '1px solid var(--border-subtle)' }}>
+            <td style={{ padding: '0.9rem 1rem', fontWeight: 600 }}>{key}</td>
+            <td style={{ padding: '0.9rem 1rem', textAlign: 'right', fontFamily: 'monospace' }}>{value}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+export function AdminMetricsPanel({ metrics, history, refreshing, windowSec, onWindowChange, onRefresh }: AdminMetricsPanelProps) {
+  const windowData = metrics?.window
+  const activeRunStatus = windowData?.run_status || metrics?.run_status || {}
+  const activeRouteCounts = windowData?.route_counts || metrics?.route_counts || {}
+  const activeCache = windowData?.cache || metrics?.cache || { hit: 0, miss: 0, hit_rate: 0 }
+  const activeNodes = windowData?.nodes || metrics?.nodes || {}
+  const nodeEntries = Object.entries(activeNodes).sort((left, right) => right[1].count - left[1].count)
+  const windowLabelSec = windowData?.window_sec || metrics?.window_sec || windowSec
+
+  const windowOptions = [
+    { label: '5m', value: 300 },
+    { label: '15m', value: 900 },
+    { label: '1h', value: 3600 },
+  ]
+  const alerts = metrics?.alerts || []
+  const historyPoints = history?.points || []
+
+  return (
+    <div style={{ padding: '3rem 2rem', maxWidth: '1100px', margin: '0 auto', overflowY: 'auto' }}>
+      <header style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+        <div>
+          <h2 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.03em' }}>运行指标</h2>
+          <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>路由、节点耗时、缓存命中与失败率快照</p>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="status-pill status-pill--neutral">窗口 {Math.floor(windowLabelSec / 60)}m</span>
+          {windowOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className="btn-ghost"
+              style={{ padding: '0.45rem 0.75rem', minWidth: '56px', background: windowSec === option.value ? '#fff' : undefined }}
+              onClick={() => onWindowChange(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+          <button type="button" className="btn-ghost" style={{ padding: '0.45rem 0.75rem', minWidth: '70px' }} onClick={onRefresh}>
+            {refreshing ? '刷新中' : '刷新'}
+          </button>
+        </div>
+      </header>
+
+      {!metrics ? (
+        <div className="embedded-card" style={{ padding: '1.2rem 1rem', color: 'var(--text-muted)' }}>
+          暂无数据
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '1rem' }}>
+            <div className="embedded-card" style={{ padding: '1rem' }}>
+              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Uptime</div>
+              <div style={{ fontSize: '1.2rem', fontWeight: 800 }}>{formatSeconds(metrics.uptime_sec)}</div>
+            </div>
+            <div className="embedded-card" style={{ padding: '1rem' }}>
+              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Inflight Runs</div>
+              <div style={{ fontSize: '1.2rem', fontWeight: 800 }}>{metrics.inflight_runs}</div>
+            </div>
+            <div className="embedded-card" style={{ padding: '1rem' }}>
+              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Cache Hit Rate</div>
+              <div style={{ fontSize: '1.2rem', fontWeight: 800 }}>{(activeCache.hit_rate * 100).toFixed(1)}%</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-desc)' }}>{activeCache.hit} hit / {activeCache.miss} miss</div>
+            </div>
+            <div className="embedded-card" style={{ padding: '1rem' }}>
+              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Completed</div>
+              <div style={{ fontSize: '1.2rem', fontWeight: 800 }}>{activeRunStatus.completed || 0}</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-desc)' }}>
+                failed {activeRunStatus.failed || 0} / cancelled {activeRunStatus.cancelled || 0}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '14px', marginBottom: '1rem' }}>
+            <div className="embedded-card" style={{ overflow: 'hidden' }}>
+              <div style={{ padding: '0.9rem 1rem', fontSize: '0.86rem', fontWeight: 700 }}>Run Status</div>
+              {renderCounterRows(activeRunStatus, '暂无状态数据')}
+            </div>
+            <div className="embedded-card" style={{ overflow: 'hidden' }}>
+              <div style={{ padding: '0.9rem 1rem', fontSize: '0.86rem', fontWeight: 700 }}>Route Counts</div>
+              {renderCounterRows(activeRouteCounts, '暂无路由数据')}
+            </div>
+          </div>
+
+          <div className="embedded-card" style={{ overflow: 'hidden', marginBottom: '1rem' }}>
+            <div style={{ padding: '0.9rem 1rem', fontSize: '0.86rem', fontWeight: 700 }}>Alerts</div>
+            {!alerts.length ? (
+              <div style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>当前窗口无告警</div>
+            ) : (
+              <div style={{ display: 'grid', gap: '10px', padding: '0.8rem 1rem 1rem' }}>
+                {alerts.map((alert) => (
+                  <div
+                    key={alert.code}
+                    style={{
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '10px',
+                      padding: '0.75rem 0.9rem',
+                      background: alert.level === 'warning' ? 'rgba(255, 245, 240, 0.8)' : 'rgba(245, 249, 255, 0.8)',
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, fontSize: '0.82rem', marginBottom: '4px' }}>{alert.message}</div>
+                    <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                      code={alert.code} value={alert.value} threshold={alert.threshold}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="embedded-card" style={{ overflow: 'hidden' }}>
+            <div style={{ padding: '0.9rem 1rem', fontSize: '0.86rem', fontWeight: 700 }}>Node Performance</div>
+            {!nodeEntries.length ? (
+              <div style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>暂无节点数据</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+                <thead>
+                  <tr style={{ background: '#f8f8fa', color: 'var(--text-secondary)' }}>
+                    <th style={{ padding: '0.9rem 1rem', textAlign: 'left', fontWeight: 700 }}>Node</th>
+                    <th style={{ padding: '0.9rem 1rem', textAlign: 'right', fontWeight: 700 }}>Count</th>
+                    <th style={{ padding: '0.9rem 1rem', textAlign: 'right', fontWeight: 700 }}>Avg(ms)</th>
+                    <th style={{ padding: '0.9rem 1rem', textAlign: 'right', fontWeight: 700 }}>P95(ms)</th>
+                    <th style={{ padding: '0.9rem 1rem', textAlign: 'right', fontWeight: 700 }}>Max(ms)</th>
+                    <th style={{ padding: '0.9rem 1rem', textAlign: 'right', fontWeight: 700 }}>Failures</th>
+                    <th style={{ padding: '0.9rem 1rem', textAlign: 'right', fontWeight: 700 }}>Failure Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {nodeEntries.map(([node, stat]) => (
+                    <tr key={node} style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '0.9rem 1rem', fontWeight: 600 }}>{node}</td>
+                      <td style={{ padding: '0.9rem 1rem', textAlign: 'right', fontFamily: 'monospace' }}>{stat.count}</td>
+                      <td style={{ padding: '0.9rem 1rem', textAlign: 'right', fontFamily: 'monospace' }}>{stat.avg_ms}</td>
+                      <td style={{ padding: '0.9rem 1rem', textAlign: 'right', fontFamily: 'monospace' }}>{stat.p95_ms ?? '-'}</td>
+                      <td style={{ padding: '0.9rem 1rem', textAlign: 'right', fontFamily: 'monospace' }}>{stat.max_ms}</td>
+                      <td style={{ padding: '0.9rem 1rem', textAlign: 'right', color: stat.failure_count > 0 ? '#c62828' : 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                        {stat.failure_count}
+                      </td>
+                      <td style={{ padding: '0.9rem 1rem', textAlign: 'right', fontFamily: 'monospace' }}>
+                        {typeof stat.failure_rate === 'number' ? `${(stat.failure_rate * 100).toFixed(1)}%` : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="embedded-card" style={{ overflow: 'hidden', marginTop: '1rem' }}>
+            <div style={{ padding: '0.9rem 1rem', fontSize: '0.86rem', fontWeight: 700 }}>Trend ({history?.bucket_sec || 300}s bucket)</div>
+            {!historyPoints.length ? (
+              <div style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>暂无趋势数据</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                <thead>
+                  <tr style={{ background: '#f8f8fa', color: 'var(--text-secondary)' }}>
+                    <th style={{ padding: '0.8rem 1rem', textAlign: 'left', fontWeight: 700 }}>Time</th>
+                    <th style={{ padding: '0.8rem 1rem', textAlign: 'right', fontWeight: 700 }}>Runs</th>
+                    <th style={{ padding: '0.8rem 1rem', textAlign: 'right', fontWeight: 700 }}>Fail Rate</th>
+                    <th style={{ padding: '0.8rem 1rem', textAlign: 'right', fontWeight: 700 }}>P95 Run(ms)</th>
+                    <th style={{ padding: '0.8rem 1rem', textAlign: 'right', fontWeight: 700 }}>Cache Hit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyPoints.slice(-20).map((point) => (
+                    <tr key={point.ts} style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '0.8rem 1rem', fontFamily: 'monospace' }}>{formatDisplayDate(new Date(point.ts * 1000).toISOString())}</td>
+                      <td style={{ padding: '0.8rem 1rem', textAlign: 'right', fontFamily: 'monospace' }}>{point.run_count}</td>
+                      <td style={{ padding: '0.8rem 1rem', textAlign: 'right', fontFamily: 'monospace' }}>{(point.failure_rate * 100).toFixed(1)}%</td>
+                      <td style={{ padding: '0.8rem 1rem', textAlign: 'right', fontFamily: 'monospace' }}>{point.p95_run_ms}</td>
+                      <td style={{ padding: '0.8rem 1rem', textAlign: 'right', fontFamily: 'monospace' }}>{(point.cache_hit_rate * 100).toFixed(1)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
