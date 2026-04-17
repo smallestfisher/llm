@@ -13,6 +13,9 @@ class RouteDecision:
     filters: dict[str, Any] = field(default_factory=dict)
     reason: str = ""
     intent: str = ""
+    positive_hits: dict[str, list[str]] = field(default_factory=dict)
+    negative_hits: dict[str, list[str]] = field(default_factory=dict)
+    confidence_breakdown: dict[str, Any] = field(default_factory=dict)
 
     def to_state_update(self) -> dict[str, Any]:
         return {
@@ -22,6 +25,9 @@ class RouteDecision:
             "route_tables": self.target_tables,
             "route_reason": self.reason,
             "intent": self.intent,
+            "route_positive_hits": self.positive_hits,
+            "route_negative_hits": self.negative_hits,
+            "route_confidence_breakdown": self.confidence_breakdown,
         }
 
 

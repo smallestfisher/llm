@@ -16,6 +16,23 @@ from app.execution.llm_client import llm_complete
 MAX_TABLE_ROWS = int(os.getenv("MAX_TABLE_ROWS", "200"))
 
 
+def _build_evidence_json(columns: list[str], db_result: list[Any], *, limit: int = 10) -> str:
+    if not db_result:
+        return "[]"
+    evidence_rows: list[dict[str, Any]] = []
+    for index, row in enumerate(db_result[:limit], start=1):
+        if isinstance(row, dict):
+            evidence_rows.append({"row_no": index, "values": row})
+            continue
+        if isinstance(row, (list, tuple)):
+            mapped = {}
+            for col_index, value in enumerate(row):
+                key = columns[col_index] if col_index < len(columns) and columns[col_index] else f"col_{col_index + 1}"
+                mapped[key] = value
+            evidence_rows.append({"row_no": index, "values": mapped})
+    return json.dumps(evidence_rows, ensure_ascii=False)
+
+
 def build_answer_payload(
     *,
     question: str,
@@ -70,6 +87,18 @@ def build_answer_payload(
             table_data = []
             summary_text = "未查询到数据。"
 
+    if not db_result:
+        answer = "未查到数据。请确认筛选条件（时间、工厂、产品、版本）后重试。"
+        return {
+            "final_answer": answer,
+            "chart_data": None,
+            "table_data": table_data,
+            "table_columns": columns,
+            "row_count": row_count or 0,
+            "truncated": truncated,
+            "chat_history": [f"问: {question}\n答: {answer}"],
+        }
+
     if db_result and not is_aggregate:
         if truncated and row_count:
             answer = f"已查询到 {row_count} 条记录，当前展示前 {len(db_result)} 条。结果集较大，请结合筛选条件缩小范围后继续查看。"
@@ -85,7 +114,18 @@ def build_answer_payload(
             "chat_history": [f"问: {question}\n答: {answer}"],
         }
 
-    answer = llm_complete(answer_prompt.format(question=question, sql_query=sql_query, db_result=db_preview, data_summary=summary_text))
+    answer = llm_complete(
+        answer_prompt.format(
+            question=question,
+            sql_query=sql_query,
+            db_result=db_preview,
+            data_summary=summary_text,
+            evidence_json=_build_evidence_json(columns, db_result),
+        ),
+        task="answer",
+    )
+    if not answer.strip():
+        answer = "结论：结果已返回。\n关键数字：请查看结果表中的聚合字段。\n风险/建议：无。"
     return {
         "final_answer": answer,
         "chart_data": None,

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import os
+
 from app.workflow.composer import CrossDomainComposer
 from app.workflow.router import route_question
-from app.workflow.state import RouteDecision, SkillExecution, CancelledError
+from app.workflow.state import RouteDecision, SkillExecution, SkillResult, CancelledError
 from app.skills.demand import DemandSkill
 from app.skills.generic import GenericSkill
 from app.skills.inventory import InventorySkill
@@ -14,6 +17,7 @@ from app.skills.sales import SalesSkill
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
+CROSS_DOMAIN_MAX_PARALLEL = max(1, int(os.getenv("CROSS_DOMAIN_MAX_PARALLEL", "2")))
 
 
 
@@ -99,7 +103,7 @@ class CompiledOrchestratedWorkflow:
                 ):
                     yield output
                 return
-            executions: list[SkillExecution] = []
+            jobs: list[tuple[int, str, object, object, RouteDecision, dict]] = []
             for index, domain in enumerate(compose_result.execution_order, start=1):
                 skill = _SKILLS.get(domain)
                 if skill is None:
@@ -120,26 +124,71 @@ class CompiledOrchestratedWorkflow:
                     intent=decision.intent,
                 )
                 plan = skill.plan(subdecision)
-                holder: dict = {}
-                async for output in self._execute_skill_astream(
-                    skill=skill,
-                    plan=plan,
-                    question=question,
-                    chat_history=chat_history,
-                    decision=subdecision,
-                    result_holder=holder,
-                    emit_final_node=False,
-                    dispatch_update={
-                        **plan.to_state_update(),
-                        "cross_domain": True,
-                        "skill_index": index,
-                        "skill_total": len(compose_result.execution_order),
-                    },
-                ):
-                    yield output
-                result = holder.get("result")
-                if result is not None:
+                dispatch_update = {
+                    **plan.to_state_update(),
+                    "cross_domain": True,
+                    "skill_index": index,
+                    "skill_total": len(compose_result.execution_order),
+                }
+                jobs.append((index, domain, skill, plan, subdecision, dispatch_update))
+
+            executions: list[SkillExecution] = []
+            for _, _, skill, plan, _, dispatch_update in jobs:
+                self._check_cancellation(config)
+                yield {"skill_dispatch": dispatch_update}
+                self._emit_event(config, "skill_dispatch", dispatch_update)
+                active_update = {"active_skill": plan.skill_name, "skill_tables": plan.tables}
+                yield {plan.node_name: active_update}
+                self._emit_event(config, plan.node_name, active_update)
+
+            parallel_config = self._parallel_config(config)
+            if len(jobs) > 1 and CROSS_DOMAIN_MAX_PARALLEL > 1:
+                semaphore = asyncio.Semaphore(CROSS_DOMAIN_MAX_PARALLEL)
+
+                async def _run_job(skill, plan, subdecision):
+                    async with semaphore:
+                        return await asyncio.to_thread(
+                            self._execute_skill_once,
+                            skill=skill,
+                            plan=plan,
+                            question=question,
+                            chat_history=chat_history,
+                            decision=subdecision,
+                            config=parallel_config,
+                        )
+
+                tasks = [_run_job(skill, plan, subdecision) for _, _, skill, plan, subdecision, _ in jobs]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for (_, domain, _, plan, _, _), result in zip(jobs, results):
+                    self._check_cancellation(config)
+                    if isinstance(result, Exception):
+                        logger.bind(domain=domain).error("cross domain skill execution failed: {}", result)
+                        skill_result = self._build_skill_error_result(plan, domain, str(result))
+                    else:
+                        skill_result = result
+                    executions.append(SkillExecution(domain=domain, plan=plan, result=skill_result))
+                    update = skill_result.to_skill_update()
+                    yield {plan.node_name: update}
+                    self._emit_event(config, plan.node_name, update)
+            else:
+                for _, domain, skill, plan, subdecision, _ in jobs:
+                    self._check_cancellation(config)
+                    try:
+                        result = self._execute_skill_once(
+                            skill=skill,
+                            plan=plan,
+                            question=question,
+                            chat_history=chat_history,
+                            decision=subdecision,
+                            config=parallel_config,
+                        )
+                    except Exception as exc:
+                        logger.bind(domain=domain).exception("cross domain skill execution failed")
+                        result = self._build_skill_error_result(plan, domain, str(exc))
                     executions.append(SkillExecution(domain=domain, plan=plan, result=result))
+                    update = result.to_skill_update()
+                    yield {plan.node_name: update}
+                    self._emit_event(config, plan.node_name, update)
             merge_result = _COMPOSER.merge(question, executions)
             self._emit_event(config, "cross_domain_merge", merge_result.to_state_update())
             yield {"cross_domain_merge": merge_result.to_state_update()}
@@ -307,6 +356,65 @@ class CompiledOrchestratedWorkflow:
         callback = config.get("on_event")
         if callback:
             callback(node, payload)
+
+    def _parallel_config(self, config: dict | None) -> dict | None:
+        if not config:
+            return None
+        is_cancelled = config.get("is_cancelled")
+        if not is_cancelled:
+            return None
+        return {"is_cancelled": is_cancelled}
+
+    def _build_skill_error_result(self, plan, domain: str, error_message: str) -> SkillResult:
+        answer = f"{domain} 域执行失败: {error_message}"
+        return SkillResult(
+            skill_name=plan.skill_name,
+            final_answer=answer,
+            sql_query="",
+            sql_error=error_message,
+            db_result=[],
+            table_columns=[],
+            table_data=[],
+            chart_data=None,
+            row_count=0,
+            truncated=False,
+            chat_history=[answer],
+        )
+
+    def _execute_skill_once(
+        self,
+        *,
+        skill,
+        plan,
+        question: str,
+        chat_history: list[str],
+        decision: RouteDecision,
+        config: dict | None = None,
+    ) -> SkillResult:
+        self._check_cancellation(config)
+        state = skill.prepare_state(
+            question=question,
+            chat_history=chat_history,
+            decision=decision,
+        )
+        state.update(skill.apply_guard(state, config=config))
+        if state.get("intent") == "REJECT":
+            state.update(skill.apply_generate_answer(state, config=config))
+            return skill.build_result(state)
+
+        state.update(skill.apply_refine_filters(state))
+        state.update(skill.apply_schema(state, question=question, plan=plan))
+        state.update(skill.apply_write_sql(state, config=config))
+
+        while True:
+            self._check_cancellation(config)
+            state.update(skill.apply_execute_sql(state, config=config))
+            if not state.get("sql_error") or (state.get("retry_count") or 0) >= 3:
+                break
+            state.update(skill.apply_reflect_sql(state, config=config))
+
+        state.update(skill.apply_generate_answer(state, config=config))
+        return skill.build_result(state)
 
 
 class OrchestratedWorkflow:

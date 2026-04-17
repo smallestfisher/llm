@@ -7,6 +7,23 @@ def _format_lines(items: tuple[str, ...]) -> str:
     return "\n".join(f"- {item}" for item in items if item)
 
 
+GLOBAL_SQL_CONSTRAINTS = (
+    "只输出纯 SQL，不要输出解释。",
+    "只能使用 SELECT 或 WITH + SELECT。",
+    "不要使用不存在的字段或表。",
+    "如果需要关联，优先遵循 schema 中已有的 relationships。",
+    "除非用户明确要求，不要返回无界全表扫描结果。",
+    "如果【结构化过滤条件】存在时间/版本/工厂/客户/产品条件，优先在 SQL 中准确体现。",
+)
+
+
+GLOBAL_ANSWER_STYLE = (
+    "回答固定 3 段：结论(1-2句) -> 关键数字(最多3条) -> 风险/建议(可选1条)。",
+    "短句输出，避免重复和铺陈。",
+    "每条关键数字必须可映射到结果字段和值；缺少证据时写“未查到”。",
+)
+
+
 def build_guard_prompt(*, domain_label: str, guard_scope: str, question: str) -> str:
     return f"""你是一个企业数据 Copilot 的安全守卫。
 当前技能负责的业务域：{domain_label}
@@ -32,8 +49,12 @@ def build_text2sql_prompt(
     focus_text = _format_lines(focus_areas)
     convention_text = _format_lines(field_conventions)
     rule_text = _format_lines(sql_rules)
+    global_text = _format_lines(GLOBAL_SQL_CONSTRAINTS)
     filter_text = json.dumps(structured_filters or {}, ensure_ascii=False, indent=2)
     return f"""你是一个资深的制造企业 MySQL 8.0 专家，当前负责 {domain_label} 技能。
+
+【全局约束】
+{global_text}
 
 当前业务关注点：
 {focus_text}
@@ -51,14 +72,6 @@ def build_text2sql_prompt(
 
 【SQL 规则】
 {rule_text}
-
-【硬性约束】
-1. 只输出纯 SQL，不要输出解释。
-2. 只能使用 SELECT 或 WITH + SELECT。
-3. 不要使用不存在的字段或表。
-4. 如果需要关联，优先遵循 schema 中已有的 relationships。
-5. 除非用户明确要求，不要返回无界全表扫描结果。
-6. 如果【结构化过滤条件】中存在时间、版本、工厂、客户或产品条件，优先在 SQL 中准确体现。
 
 用户问题：
 {question}
@@ -112,16 +125,26 @@ def build_answer_prompt(
     answer_rules: tuple[str, ...],
 ) -> str:
     rule_text = _format_lines(answer_rules)
+    style_text = _format_lines(GLOBAL_ANSWER_STYLE)
     return f"""你是一个 {domain_label} 数据分析助理。
-请根据用户问题、SQL 和数据库结果，输出专业、简洁、可执行的业务回答。
+请根据用户问题、SQL 和数据库结果，输出专业且简洁的业务回答。
 
 【回答规则】
 {rule_text}
+
+【统一风格】
+{style_text}
+
+【证据绑定要求】
+- 只使用给定结果中的字段和数值，不得补充未出现的数据。
+- 关键数字需写明来源字段（例如: 来自 report_month=2026-03 的 sales_qty）。
+- 如果结果为空，必须直接输出“未查到数据”，不要给建议或猜测。
 
 用户问题：{{question}}
 执行 SQL：{{sql_query}}
 数据库返回预览：{{db_result}}
 统计分析结果：{{data_summary}}
+证据映射：{{evidence_json}}
 """
 
 
@@ -130,7 +153,7 @@ def build_route_decision_prompt(
     question: str,
     shared_filters: dict,
     explicit_hits: list[str],
-    scored_domains: list[tuple[str, float]],
+    scored_domains: list[dict],
 ) -> str:
     return f"""你是企业制造数据 Copilot 的路由决策器。
 请判断用户问题应该进入哪个业务域。
@@ -149,6 +172,7 @@ def build_route_decision_prompt(
 2. 只有在问题确实同时涉及多个业务域、且需要联合回答时，才输出 cross_domain。
 3. 如果问题与企业数据查询无关，或无法判断，输出 legacy。
 4. 不要臆造表名，不要输出允许范围之外的 route。
+5. top2 置信接近时，优先参考 positive_hits/negative_hits 做保守判断。
 
 用户问题：
 {question}

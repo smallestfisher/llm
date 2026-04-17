@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from app.execution.llm_client import llm_complete
 from app.execution.prompts import build_route_decision_prompt
@@ -91,23 +92,114 @@ _DOMAIN_KEYWORDS = {
     },
 }
 
-_CONNECTOR_KEYWORDS = ("对比", "对照", "联查", "关联", "联合", "同时", "一起", "匹配", "结合", "跨域", "支撑", "覆盖", "影响")
+_DOMAIN_NEGATIVE_KEYWORDS = {
+    "production": {"计划": 1.0, "排产": 1.2, "库存": 1.0, "forecast": 1.2, "commit": 1.2, "销售": 1.0, "财务": 1.0},
+    "planning": {"实绩": 1.2, "产出": 1.2, "报废": 1.2, "库存": 0.8, "forecast": 1.0, "commit": 1.0, "销售": 1.0},
+    "inventory": {"排产": 1.0, "日计划": 1.0, "forecast": 1.2, "commit": 1.2, "销售": 0.8, "财务": 0.8},
+    "demand": {"库存": 1.0, "ttl": 1.2, "hold": 1.2, "排产": 1.0, "实绩": 1.0, "销售": 0.8},
+    "sales": {"排产": 1.0, "计划": 0.8, "实绩": 1.0, "报废": 1.0, "库存": 0.8, "forecast": 1.0, "commit": 1.0},
+}
+
+_CONNECTOR_KEYWORDS = (
+    "对比",
+    "对照",
+    "联查",
+    "关联",
+    "联合",
+    "同时",
+    "一起",
+    "匹配",
+    "结合",
+    "跨域",
+    "支撑",
+    "覆盖",
+    "影响",
+)
 _ROUTE_THRESHOLD = 2.5
+_ROUTE_REVIEW_GAP = 0.12
 _ALLOWED_ROUTES = {"production", "planning", "inventory", "demand", "sales", "cross_domain", "legacy"}
 
 
-def _domain_score(question: str, domain: str) -> tuple[float, list[str]]:
-    score = 0.0
-    table_hits: list[str] = []
+def _to_confidence(score: float) -> float:
+    return max(0.0, min(0.95, score / 10.0))
+
+
+def _domain_score(question: str, domain: str) -> dict[str, Any]:
     q = question.lower()
+    score = 0.0
+    positive_score = 0.0
+    negative_score = 0.0
+    table_hits: list[str] = []
+    positive_hits: list[str] = []
+    negative_hits: list[str] = []
+
     for table_name in get_tables_for_domain(domain):
         if table_name.lower() in q:
             score += 3.0
+            positive_score += 3.0
             table_hits.append(table_name)
+            positive_hits.append(f"table:{table_name}")
+
     for keyword, weight in _DOMAIN_KEYWORDS[domain].items():
         if keyword.lower() in q:
             score += weight
-    return score, table_hits
+            positive_score += weight
+            positive_hits.append(keyword)
+
+    for keyword, penalty in _DOMAIN_NEGATIVE_KEYWORDS.get(domain, {}).items():
+        if keyword.lower() in q:
+            score -= penalty
+            negative_score += penalty
+            negative_hits.append(keyword)
+
+    return {
+        "domain": domain,
+        "score": score,
+        "table_hits": table_hits,
+        "positive_hits": positive_hits,
+        "negative_hits": negative_hits,
+        "positive_score": positive_score,
+        "negative_score": negative_score,
+    }
+
+
+def _build_hit_maps(scored: list[dict[str, Any]], domains: list[str]) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    positive_hits: dict[str, list[str]] = {}
+    negative_hits: dict[str, list[str]] = {}
+    for entry in scored:
+        domain = entry["domain"]
+        if domain not in domains:
+            continue
+        positive_hits[domain] = list(entry.get("positive_hits") or [])
+        negative_hits[domain] = list(entry.get("negative_hits") or [])
+    return positive_hits, negative_hits
+
+
+def _confidence_breakdown(scored: list[dict[str, Any]], *, method: str, cross_domain_signal: bool = False) -> dict[str, Any]:
+    top = scored[0] if scored else {"domain": "", "score": 0.0}
+    second = scored[1] if len(scored) > 1 else {"domain": "", "score": 0.0}
+    return {
+        "method": method,
+        "top_domain": top.get("domain", ""),
+        "top_score": round(float(top.get("score") or 0.0), 3),
+        "second_domain": second.get("domain", ""),
+        "second_score": round(float(second.get("score") or 0.0), 3),
+        "score_gap": round(float((top.get("score") or 0.0) - (second.get("score") or 0.0)), 3),
+        "top_confidence": _to_confidence(float(top.get("score") or 0.0)),
+        "second_confidence": _to_confidence(float(second.get("score") or 0.0)),
+        "cross_domain_signal": cross_domain_signal,
+        "domains": [
+            {
+                "domain": entry.get("domain"),
+                "score": round(float(entry.get("score") or 0.0), 3),
+                "positive_score": round(float(entry.get("positive_score") or 0.0), 3),
+                "negative_score": round(float(entry.get("negative_score") or 0.0), 3),
+                "positive_hits": list(entry.get("positive_hits") or [])[:8],
+                "negative_hits": list(entry.get("negative_hits") or [])[:8],
+            }
+            for entry in scored
+        ],
+    }
 
 
 def _suggest_tables(domain: str, question: str) -> list[str]:
@@ -141,7 +233,13 @@ def _suggest_tables(domain: str, question: str) -> list[str]:
     return []
 
 
-def _build_tables_for_route(route: str, matched_domains: list[str], explicit_hits: list[str], scored: list[tuple[str, float, list[str]]], question: str) -> list[str]:
+def _build_tables_for_route(
+    route: str,
+    matched_domains: list[str],
+    explicit_hits: list[str],
+    scored: list[dict[str, Any]],
+    question: str,
+) -> list[str]:
     tables: list[str] = []
     if route == "cross_domain":
         for domain in matched_domains[:2]:
@@ -150,10 +248,10 @@ def _build_tables_for_route(route: str, matched_domains: list[str], explicit_hit
                     tables.append(table_name)
         return tables
 
-    for domain, _, domain_hits in scored:
-        if domain != route:
+    for entry in scored:
+        if entry["domain"] != route:
             continue
-        for table_name in explicit_hits + domain_hits:
+        for table_name in explicit_hits + list(entry.get("table_hits") or []):
             if table_name not in tables:
                 tables.append(table_name)
         break
@@ -162,29 +260,48 @@ def _build_tables_for_route(route: str, matched_domains: list[str], explicit_hit
     return tables
 
 
-def _should_use_llm_router(rule_decision: RouteDecision, scored: list[tuple[str, float, list[str]]], question: str) -> bool:
+def _should_use_llm_router(rule_decision: RouteDecision, scored: list[dict[str, Any]], question: str) -> bool:
     if rule_decision.route == "legacy" and any(token in question for token in ("查询", "统计", "分析", "对比", "看下", "查看", "多少", "趋势", "风险")):
         return True
     if len(scored) < 2:
         return False
-    top_score = scored[0][1]
-    second_score = scored[1][1]
-    if top_score < _ROUTE_THRESHOLD + 0.8:
+    top_score = float(scored[0].get("score") or 0.0)
+    second_score = float(scored[1].get("score") or 0.0)
+    top_conf = _to_confidence(top_score)
+    second_conf = _to_confidence(second_score)
+    if top_conf < 0.45:
+        return True
+    if top_conf - second_conf <= _ROUTE_REVIEW_GAP:
         return True
     if top_score > 0 and second_score >= top_score * 0.8:
         return True
     return False
 
 
-def _llm_route_question(question: str, shared_filters: dict, explicit_hits: list[str], scored: list[tuple[str, float, list[str]]]) -> RouteDecision | None:
+def _llm_route_question(
+    question: str,
+    shared_filters: dict,
+    explicit_hits: list[str],
+    scored: list[dict[str, Any]],
+) -> RouteDecision | None:
     prompt = build_route_decision_prompt(
         question=question,
         shared_filters=shared_filters,
         explicit_hits=explicit_hits,
-        scored_domains=[(domain, score) for domain, score, _ in scored],
+        scored_domains=[
+            {
+                "domain": entry["domain"],
+                "score": round(float(entry.get("score") or 0.0), 3),
+                "positive_hits": list(entry.get("positive_hits") or [])[:8],
+                "negative_hits": list(entry.get("negative_hits") or [])[:8],
+                "positive_score": round(float(entry.get("positive_score") or 0.0), 3),
+                "negative_score": round(float(entry.get("negative_score") or 0.0), 3),
+            }
+            for entry in scored
+        ],
     )
     try:
-        raw = llm_complete(prompt)
+        raw = llm_complete(prompt, task="router")
     except Exception:
         logger.exception("llm router fallback failed")
         return None
@@ -218,6 +335,10 @@ def _llm_route_question(question: str, shared_filters: dict, explicit_hits: list
 
     reason = (payload.get("reason") or "").strip() or f"llm fallback selected {route}"
     tables = _build_tables_for_route(route, matched_domains, explicit_hits, scored, question)
+    positive_hits, negative_hits = _build_hit_maps(scored, matched_domains or [route])
+    confidence_breakdown = _confidence_breakdown(scored, method="llm_review")
+    confidence_breakdown["llm_selected_route"] = route
+    confidence_breakdown["llm_confidence"] = confidence
 
     return RouteDecision(
         route=route,
@@ -226,27 +347,33 @@ def _llm_route_question(question: str, shared_filters: dict, explicit_hits: list
         target_tables=tables,
         filters=shared_filters,
         reason=reason,
+        positive_hits=positive_hits,
+        negative_hits=negative_hits,
+        confidence_breakdown=confidence_breakdown,
     )
 
 
-def route_question_by_rules(question: str) -> tuple[RouteDecision, list[tuple[str, float, list[str]]], list[str], dict]:
+def route_question_by_rules(question: str) -> tuple[RouteDecision, list[dict[str, Any]], list[str], dict]:
     q = (question or "").strip()
     if not q:
         return RouteDecision(route="legacy", reason="empty question"), [], [], {}
     shared_filters = extract_shared_filters(q)
 
     explicit_hits = explicit_table_hits(q)
-    scored: list[tuple[str, float, list[str]]] = []
-    for domain in ("production", "planning", "inventory", "demand", "sales"):
-        score, domain_table_hits = _domain_score(q, domain)
-        scored.append((domain, score, domain_table_hits))
+    scored = [_domain_score(q, domain) for domain in ("production", "planning", "inventory", "demand", "sales")]
+    scored.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
+    top = scored[0]
+    second = scored[1]
+    top_domain = str(top["domain"])
+    top_score = float(top.get("score") or 0.0)
+    top_table_hits = list(top.get("table_hits") or [])
+    second_domain = str(second["domain"])
+    second_score = float(second.get("score") or 0.0)
+    second_table_hits = list(second.get("table_hits") or [])
 
-    scored.sort(key=lambda item: item[1], reverse=True)
-    top_domain, top_score, top_table_hits = scored[0]
-    second_domain, second_score, second_table_hits = scored[1]
-
-    active_domains = [domain for domain, score, _ in scored if score >= _ROUTE_THRESHOLD]
+    active_domains = [str(entry["domain"]) for entry in scored if float(entry.get("score") or 0.0) >= _ROUTE_THRESHOLD]
     cross_domain_signal = any(token in q for token in _CONNECTOR_KEYWORDS)
+    breakdown = _confidence_breakdown(scored, method="rules", cross_domain_signal=cross_domain_signal)
 
     if (
         len(active_domains) > 1 and (cross_domain_signal or second_score >= top_score * 0.65)
@@ -265,13 +392,17 @@ def route_question_by_rules(question: str) -> tuple[RouteDecision, list[tuple[st
             for table_name in _suggest_tables(second_domain, q):
                 if table_name not in combined_tables:
                     combined_tables.append(table_name)
+        positive_hits, negative_hits = _build_hit_maps(scored, matched_domains)
         return RouteDecision(
             route="cross_domain",
-            confidence=min(0.95, top_score / 10.0),
+            confidence=_to_confidence(top_score),
             matched_domains=matched_domains,
             target_tables=combined_tables,
             filters=shared_filters,
             reason=f"question spans {', '.join(matched_domains)}",
+            positive_hits=positive_hits,
+            negative_hits=negative_hits,
+            confidence_breakdown=breakdown,
         ), scored, explicit_hits, shared_filters
 
     if top_score >= _ROUTE_THRESHOLD:
@@ -281,22 +412,31 @@ def route_question_by_rules(question: str) -> tuple[RouteDecision, list[tuple[st
                 tables.append(table_name)
         if not tables:
             tables = _suggest_tables(top_domain, q)
+        positive_hits, negative_hits = _build_hit_maps(scored, [top_domain])
         return RouteDecision(
             route=top_domain,
-            confidence=min(0.95, top_score / 10.0),
+            confidence=_to_confidence(top_score),
             matched_domains=[top_domain],
             target_tables=tables,
             filters=shared_filters,
             reason=f"matched {top_domain} keywords",
+            positive_hits=positive_hits,
+            negative_hits=negative_hits,
+            confidence_breakdown=breakdown,
         ), scored, explicit_hits, shared_filters
 
+    fallback_domains = [top_domain] if top_score > 0 else []
+    positive_hits, negative_hits = _build_hit_maps(scored, fallback_domains)
     return RouteDecision(
         route="legacy",
-        confidence=min(0.4, top_score / 10.0),
-        matched_domains=[top_domain] if top_score > 0 else [],
+        confidence=min(0.4, _to_confidence(top_score)),
+        matched_domains=fallback_domains,
         target_tables=explicit_hits,
         filters=shared_filters,
         reason="router confidence too low",
+        positive_hits=positive_hits,
+        negative_hits=negative_hits,
+        confidence_breakdown=breakdown,
     ), scored, explicit_hits, shared_filters
 
 

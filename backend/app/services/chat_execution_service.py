@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db import SessionLocal
 from app.logging_config import get_logger
 from app.models import Run, Thread, Turn, utcnow
+from app.services.cache_service import query_cache_service
 from app.services.chat_service import ChatService
 from app.services.thread_event_publisher import thread_event_publisher
 from app.services.run_service import ACTIVE_RUN_STATUSES, RunService
@@ -35,6 +36,7 @@ class ChatExecutionService:
             "rows": result.get("db_result") or [],
             "row_count": result.get("row_count"),
             "truncated": bool(result.get("truncated")),
+            "cache_hit": bool(result.get("cache_hit")),
         }
 
     def _build_route_snapshot(self, decision: RouteDecision) -> dict:
@@ -45,6 +47,23 @@ class ChatExecutionService:
             "target_tables": decision.target_tables,
             "filters": decision.filters,
             "reason": decision.reason,
+            "positive_hits": decision.positive_hits,
+            "negative_hits": decision.negative_hits,
+            "confidence_breakdown": decision.confidence_breakdown,
+        }
+
+    def _cacheable_result(self, workflow_result: dict) -> dict:
+        return {
+            "final_answer": workflow_result.get("final_answer") or "",
+            "sql_query": workflow_result.get("sql_query") or "",
+            "sql_error": workflow_result.get("sql_error") or "",
+            "db_result": workflow_result.get("db_result") or [],
+            "table_columns": workflow_result.get("table_columns") or [],
+            "row_count": workflow_result.get("row_count"),
+            "truncated": bool(workflow_result.get("truncated")),
+            "active_skill": workflow_result.get("active_skill") or workflow_result.get("skill_name") or "",
+            "route": workflow_result.get("route") or "",
+            "route_reason": workflow_result.get("route_reason") or "",
         }
 
     def _publish_thread(self, thread_id: int, *, event: str) -> None:
@@ -121,6 +140,28 @@ class ChatExecutionService:
             history = self.chat_service.build_thread_history(db, thread)
             initial_decision = route_question(question)
             route_snapshot = self._build_route_snapshot(initial_decision)
+            cache_key = query_cache_service.build_key(question=question, decision=initial_decision)
+            cached_result = query_cache_service.get(cache_key)
+            if cached_result:
+                cached_result["cache_hit"] = True
+                self.run_service.update_run_progress(
+                    db,
+                    run,
+                    current_step="completed",
+                    route=cached_result.get("route") or initial_decision.route,
+                    route_reason=cached_result.get("route_reason") or initial_decision.reason,
+                    sql_query=cached_result.get("sql_query", ""),
+                    error_message=cached_result.get("sql_error", ""),
+                )
+                thread.updated_at = utcnow()
+                db.commit()
+                metadata = self._workflow_result_to_metadata(cached_result, route_snapshot)
+                answer = cached_result.get("final_answer") or f"[rewrite] 未生成最终回答：{question}"
+                self.run_service.complete_run(db, run, turn, answer, metadata)
+                thread.updated_at = utcnow()
+                db.commit()
+                self._publish_thread(thread.id, event="run_finished")
+                return
 
             def is_cancelled() -> bool:
                 check_db = SessionLocal()
@@ -175,6 +216,12 @@ class ChatExecutionService:
             if self.run_service.is_cancel_requested(run):
                 self.run_service.cancel_run(db, run, turn)
             else:
+                if not workflow_result.get("sql_error"):
+                    query_cache_service.set(
+                        key=cache_key,
+                        value=self._cacheable_result(workflow_result),
+                        route=initial_decision.route,
+                    )
                 metadata = self._workflow_result_to_metadata(workflow_result, route_snapshot)
                 answer = workflow_result.get("final_answer") or f"[rewrite] 未生成最终回答：{question}"
                 self.run_service.complete_run(db, run, turn, answer, metadata)

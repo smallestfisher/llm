@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import os
 from abc import ABC
 from typing import Any
 
 from app.semantic.domains import build_schema_excerpt
 from app.semantic.filters import apply_filter_refinement
 from app.execution.llm_client import llm_complete
-from app.execution.sql_executor import execute_sql
+from app.execution.sql_executor import choose_best_sql_candidate, execute_sql
 from app.execution.sql_guard import harden_sql, sanitize_sql
 from app.presentation.answer_builder import build_answer_payload
 from app.workflow.state import RouteDecision, SkillPlan, SkillResult, CancelledError
@@ -16,9 +17,14 @@ from app.execution.prompts import (
     build_reflect_sql_prompt,
     build_text2sql_prompt,
 )
+from app.skills.profiles import SKILL_PROFILES
+
+SQL_CANDIDATE_COUNT = max(1, min(3, int(os.getenv("SQL_CANDIDATE_COUNT", "2"))))
+SQL_CANDIDATE_EXPAND_SCORE = int(os.getenv("SQL_CANDIDATE_EXPAND_SCORE", "90"))
 
 
 class BaseSkill(ABC):
+    profile_key = ""
     domain = ""
     skill_name = ""
     node_name = ""
@@ -31,6 +37,20 @@ class BaseSkill(ABC):
     default_tables: tuple[str, ...] = ()
     helper_tables: tuple[str, ...] = ()
     keyword_table_map: tuple[tuple[tuple[str, ...], str], ...] = ()
+
+    def __init__(self) -> None:
+        profile = SKILL_PROFILES.get(self.profile_key)
+        if profile is None:
+            return
+        self.domain_label = profile.domain_label
+        self.guard_scope = profile.guard_scope
+        self.focus_areas = profile.focus_areas
+        self.field_conventions = profile.field_conventions
+        self.sql_rules = profile.sql_rules
+        self.answer_rules = profile.answer_rules
+        self.default_tables = profile.default_tables
+        self.helper_tables = profile.helper_tables
+        self.keyword_table_map = profile.keyword_table_map
 
     def _check_cancellation(self, config: dict | None) -> None:
         if config and config.get("is_cancelled") and config["is_cancelled"]():
@@ -62,7 +82,8 @@ class BaseSkill(ABC):
                 domain_label=self.domain_label or self.domain,
                 guard_scope=self.guard_scope or (self.domain_label or self.domain),
                 question=state["question"],
-            )
+            ),
+            task="guard"
         )
         if "REJECT" in decision:
             return {"intent": "REJECT"}
@@ -102,17 +123,64 @@ class BaseSkill(ABC):
             question=f"【前情提要】\n{history_text}\n\n【当前用户问题】\n{effective_question}" if history_text else effective_question,
             structured_filters=state.get("refined_filters") or {},
         )
-        sql_query = harden_sql(
-            sanitize_sql(llm_complete(prompt, stream=True)),
-            structured_filters=state.get("refined_filters") or {},
+
+        strategy_hints = (
+            "优先单表和最小必要字段，先保证条件正确。",
+            "优先清晰聚合口径，必要时再使用 JOIN。",
+        )
+        allowed_tables = self._allowed_tables()
+        filters = state.get("refined_filters") or {}
+
+        def _normalize_sql(raw_sql: str) -> str:
+            return harden_sql(
+                sanitize_sql(raw_sql),
+                structured_filters=filters,
+                question=effective_question,
+                domain=self.domain,
+                allowed_tables=allowed_tables,
+            )
+
+        sql_candidates: list[str] = [_normalize_sql(llm_complete(prompt, stream=True, task="sql"))]
+        ranking = choose_best_sql_candidate(
+            sql_candidates,
             question=effective_question,
             domain=self.domain,
-            allowed_tables=self._allowed_tables(),
+            structured_filters=filters,
+            allowed_tables=allowed_tables,
         )
+
+        if SQL_CANDIDATE_COUNT > 1 and self._should_expand_sql_candidates(ranking):
+            for hint in strategy_hints[: max(0, SQL_CANDIDATE_COUNT - 1)]:
+                alt_prompt = f"{prompt}\n\n补充要求：请给出另一种 SQL 写法，{hint}"
+                sql_candidates.append(_normalize_sql(llm_complete(alt_prompt, stream=True, task="sql")))
+                ranking = choose_best_sql_candidate(
+                    sql_candidates,
+                    question=effective_question,
+                    domain=self.domain,
+                    structured_filters=filters,
+                    allowed_tables=allowed_tables,
+                )
+                if not self._should_expand_sql_candidates(ranking):
+                    break
+
+        sql_query = ranking.get("best_sql") or (sql_candidates[0] if sql_candidates else "")
+
         return {
             "sql_query": sql_query,
+            "sql_candidates": sql_candidates,
+            "sql_candidate_ranking": ranking.get("reports") or [],
             "retry_count": state.get("retry_count") or 0,
         }
+
+    def _should_expand_sql_candidates(self, ranking: dict[str, Any]) -> bool:
+        reports = ranking.get("reports") or []
+        if not reports:
+            return True
+        if ranking.get("best_lint_issues"):
+            return True
+        if not ranking.get("best_probe_ok"):
+            return True
+        return int(ranking.get("best_score", -999)) < SQL_CANDIDATE_EXPAND_SCORE
 
     def apply_execute_sql(self, state: dict[str, Any], config: dict | None = None) -> dict[str, Any]:
         self._check_cancellation(config)
@@ -138,7 +206,7 @@ class BaseSkill(ABC):
         )
         return {
             "sql_query": harden_sql(
-                sanitize_sql(llm_complete(prompt, stream=True)),
+                sanitize_sql(llm_complete(prompt, stream=True, task="reflect")),
                 structured_filters=state.get("refined_filters") or {},
                 question=state.get("normalized_question") or state["question"],
                 domain=self.domain,
@@ -238,6 +306,8 @@ class BaseSkill(ABC):
             "intent_filters": dict(decision.filters or {}),
             "refined_filters": {},
             "sql_query": "",
+            "sql_candidates": [],
+            "sql_candidate_ranking": [],
             "sql_error": "",
             "db_result": [],
             "final_answer": "",
