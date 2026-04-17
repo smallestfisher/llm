@@ -1,6 +1,9 @@
 import unittest
+from datetime import date
+from unittest import mock
 
-from app.semantic.filters import extract_shared_filters
+from app.semantic.filters import apply_filter_refinement, extract_shared_filters
+from app import workflow as workflow_pkg
 from app.workflow.router import route_question
 
 
@@ -30,9 +33,39 @@ class FilterExtractorTestCase(unittest.TestCase):
         self.assertEqual(filters.get("relative_day"), "yesterday")
 
     def test_router_carries_shared_filters(self):
-        decision = route_question("查询最近14天库存风险")
+        with mock.patch.object(workflow_pkg.router, "_llm_route_question", return_value=None):
+            decision = route_question("查询最近14天库存风险")
         self.assertEqual(decision.route, "inventory")
         self.assertEqual(decision.filters.get("recent_days"), 14)
+
+    def test_refine_demand_week_prefix_for_p_table(self):
+        refined = apply_filter_refinement(
+            question="看下2026年4月第三周P版承诺需求",
+            intent="demand_query",
+            filters={},
+            allowed_tables=["p_demand", "product_attributes", "product_mapping"],
+        )
+        self.assertEqual(refined.get("pm_version_prefix"), "202604W3")
+        self.assertEqual(refined.get("pm_version_table_type"), "P")
+
+    def test_refine_demand_relative_week_prefix_for_v_table(self):
+        refined = apply_filter_refinement(
+            question="本周V版forecast需求",
+            intent="demand_query",
+            filters={"relative_week": "current_week"},
+            allowed_tables=["v_demand", "product_attributes", "product_mapping"],
+        )
+        self.assertTrue(str(refined.get("pm_version_prefix") or "").startswith(str(date.today().year)))
+        self.assertEqual(refined.get("pm_version_table_type"), "V")
+
+    def test_refine_demand_month_only_does_not_force_pm_version_prefix(self):
+        refined = apply_filter_refinement(
+            question="看下本月P版承诺需求",
+            intent="demand_query",
+            filters={"relative_month": "current_month"},
+            allowed_tables=["p_demand", "product_attributes", "product_mapping"],
+        )
+        self.assertIsNone(refined.get("pm_version_prefix"))
 
 
 if __name__ == "__main__":

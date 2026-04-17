@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from decimal import Decimal
 from datetime import date, datetime
 from typing import Any
 
@@ -19,6 +20,16 @@ SQL_ENABLE_PRECOUNT = os.getenv("SQL_ENABLE_PRECOUNT", "0") == "1"
 SQL_CANDIDATE_PROBE_LIMIT = int(os.getenv("SQL_CANDIDATE_PROBE_LIMIT", "1"))
 
 load_dotenv()
+
+
+def _to_jsonable_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        if value == value.to_integral_value():
+            return int(value)
+        return float(value)
+    if isinstance(value, (date, datetime)):
+        return value.strftime("%Y-%m-%d")
+    return value
 
 
 class Database:
@@ -200,10 +211,7 @@ def execute_sql(
         for row in rows:
             new_row: list[Any] = []
             for item in row:
-                if isinstance(item, (date, datetime)):
-                    new_row.append(item.strftime("%Y-%m-%d"))
-                else:
-                    new_row.append(item)
+                new_row.append(_to_jsonable_value(item))
             formatted_rows.append(new_row)
 
         if row_count is None:

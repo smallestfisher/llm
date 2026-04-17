@@ -16,11 +16,31 @@ from app.execution.llm_client import llm_complete
 MAX_TABLE_ROWS = int(os.getenv("MAX_TABLE_ROWS", "200"))
 
 
+def _jsonable_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        if value == value.to_integral_value():
+            return int(value)
+        return float(value)
+    return value
+
+
+def _normalize_rows(db_result: list[Any]) -> list[Any]:
+    normalized: list[Any] = []
+    for row in db_result:
+        if isinstance(row, dict):
+            normalized.append({key: _jsonable_value(value) for key, value in row.items()})
+        elif isinstance(row, (list, tuple)):
+            normalized.append([_jsonable_value(value) for value in row])
+        else:
+            normalized.append(_jsonable_value(row))
+    return normalized
+
+
 def _build_evidence_json(columns: list[str], db_result: list[Any], *, limit: int = 10) -> str:
     if not db_result:
         return "[]"
     evidence_rows: list[dict[str, Any]] = []
-    for index, row in enumerate(db_result[:limit], start=1):
+    for index, row in enumerate(_normalize_rows(db_result[:limit]), start=1):
         if isinstance(row, dict):
             evidence_rows.append({"row_no": index, "values": row})
             continue
@@ -44,6 +64,8 @@ def build_answer_payload(
     truncated: bool,
     answer_prompt: str,
 ) -> dict[str, Any]:
+    normalized_result = _normalize_rows(db_result)
+
     if sql_error:
         answer = f"[warning] 数据库查询出错:\n{sql_error}"
         return {
@@ -57,15 +79,15 @@ def build_answer_payload(
         }
 
     if pd is None:
-        db_preview = json.dumps(db_result[:20], ensure_ascii=False)
-        table_data = db_result[:MAX_TABLE_ROWS]
-        summary_text = f"查询结果共 {row_count or len(db_result)} 条记录。" if db_result else "未查询到数据。"
+        db_preview = json.dumps(normalized_result[:20], ensure_ascii=False)
+        table_data = normalized_result[:MAX_TABLE_ROWS]
+        summary_text = f"查询结果共 {row_count or len(normalized_result)} 条记录。" if normalized_result else "未查询到数据。"
         is_aggregate = any(token in sql_query.lower() for token in (" group by ", "count(", "sum(", "avg(", "min(", "max("))
     else:
-        if db_result and columns:
-            df = pd.DataFrame(db_result, columns=columns)
-        elif db_result:
-            df = pd.DataFrame(db_result)
+        if normalized_result and columns:
+            df = pd.DataFrame(normalized_result, columns=columns)
+        elif normalized_result:
+            df = pd.DataFrame(normalized_result)
         else:
             df = pd.DataFrame()
 
@@ -87,7 +109,7 @@ def build_answer_payload(
             table_data = []
             summary_text = "未查询到数据。"
 
-    if not db_result:
+    if not normalized_result:
         answer = "未查到数据。请确认筛选条件（时间、工厂、产品、版本）后重试。"
         return {
             "final_answer": answer,
@@ -99,11 +121,11 @@ def build_answer_payload(
             "chat_history": [f"问: {question}\n答: {answer}"],
         }
 
-    if db_result and not is_aggregate:
+    if normalized_result and not is_aggregate:
         if truncated and row_count:
-            answer = f"已查询到 {row_count} 条记录，当前展示前 {len(db_result)} 条。结果集较大，请结合筛选条件缩小范围后继续查看。"
+            answer = f"已查询到 {row_count} 条记录，当前展示前 {len(normalized_result)} 条。结果集较大，请结合筛选条件缩小范围后继续查看。"
         else:
-            answer = f"已查询到 {row_count or len(db_result)} 条记录，请查看下方结果表。"
+            answer = f"已查询到 {row_count or len(normalized_result)} 条记录，请查看下方结果表。"
         return {
             "final_answer": answer,
             "chart_data": None,
@@ -120,7 +142,7 @@ def build_answer_payload(
             sql_query=sql_query,
             db_result=db_preview,
             data_summary=summary_text,
-            evidence_json=_build_evidence_json(columns, db_result),
+            evidence_json=_build_evidence_json(columns, normalized_result),
         ),
         task="answer",
     )

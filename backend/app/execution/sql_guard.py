@@ -191,6 +191,26 @@ def lint_sql(
         if not has_version_filter:
             issues.append(f"缺少版本过滤条件 {version_value}")
 
+    pm_version_exact = str(filters.get("pm_version_exact") or "")
+    if pm_version_exact:
+        has_exact_filter = bool(
+            re.search(r"(?is)\bPM_VERSION\s*=\s*", normalized_sql)
+            and pm_version_exact in normalized_sql
+        )
+        if not has_exact_filter:
+            issues.append(f"缺少完整版本过滤条件 {pm_version_exact}")
+
+    pm_version_prefix = str(filters.get("pm_version_prefix") or "")
+    if pm_version_prefix:
+        table_type = str(filters.get("pm_version_table_type") or "")
+        expected_prefix = f"{pm_version_prefix}{table_type}" if table_type in {"P", "V"} else pm_version_prefix
+        has_prefix_filter = bool(
+            re.search(r"(?is)\bPM_VERSION\s+(?:=|like)\s*", normalized_sql)
+            and expected_prefix in normalized_sql
+        )
+        if not has_prefix_filter:
+            issues.append(f"缺少版本前缀过滤条件 {expected_prefix}")
+
     if filters.get("factory") and not _sql_mentions_any(normalized_sql, ("factory_code", "FACTORY", "factory", str(filters["factory"]))):
         issues.append(f"缺少工厂过滤条件 {filters['factory']}")
 
@@ -198,7 +218,7 @@ def lint_sql(
         key in filters
         for key in ("date_from", "date_to", "month", "month_from", "month_to", "recent_days", "relative_day", "relative_week", "relative_month")
     )
-    if has_time_filter and " where " not in f" {lower_sql} ":
+    if has_time_filter and not re.search(r"(?is)\bwhere\b", normalized_sql):
         issues.append("问题包含时间条件，但 SQL 缺少 WHERE 过滤")
 
     if domain in {"sales", "planning"}:

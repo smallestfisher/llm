@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from . import env as _env  # noqa: F401
 from app.api.routes import router
 from app.bootstrap import init_backend_db
 from app.logging_config import configure_logging

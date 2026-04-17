@@ -126,11 +126,14 @@ SKILL_PROFILES: dict[str, SkillProfile] = {
         field_conventions=(
             "v_demand/p_demand 为横表：MONTH 起始月，NEXT/LAST/MONTH4~7 后续月",
             "V版优先 v_demand；P版/commit 优先 p_demand",
-            "仅在用户给版本号时过滤 PM_VERSION",
+            "用户给完整版本号时按 PM_VERSION 精确过滤；用户给周粒度时间时可按 PM_VERSION 周前缀过滤",
+            "仅有月粒度时间时优先使用 MONTH/NEXT/LAST 等月份口径，不要臆造某一周 PM_VERSION",
         ),
         sql_rules=(
             "多月查询需正确展开横表月份字段",
             "默认先按版本/客户/产品/月份聚合",
+            "若结构化过滤条件里存在 pm_version_exact，必须使用 PM_VERSION 精确过滤",
+            "若存在 pm_version_prefix，p_demand/v_demand 应按该前缀过滤 PM_VERSION；仅在给出表类型时再补 P/V 后缀约束",
             "跨域仅给需求事实，不替代库存/计划结论",
         ),
         answer_rules=(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date, timedelta
 from typing import Any
 
 from app.semantic.heuristics import (
@@ -14,6 +15,9 @@ from app.semantic.heuristics import (
 _DATE_RANGE = re.compile(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})")
 _MONTH_RANGE = re.compile(r"(\d{4}[-/]\d{1,2})")
 _VERSION_RANGE = re.compile(r"(20\d{2}W\d{2})", re.IGNORECASE)
+_DEMAND_VERSION_EXACT = re.compile(r"\b(20\d{2}\d{2}W[1-5][PV]\d+)\b", re.IGNORECASE)
+_DEMAND_WEEK_PREFIX = re.compile(r"\b(20\d{2}\d{2}W[1-5])(?:[PV]\d+)?\b", re.IGNORECASE)
+_YEAR_MONTH_WEEK = re.compile(r"(20\d{2})[年/-]?(\d{1,2})月?(?:第)?([1-5一二三四五])(?:周|w)", re.IGNORECASE)
 _FACTORY_RANGE = re.compile(r"\b(B\d+_[A-Z]{2}|BJ\d{2}|CD\d{2}|MY\d{2}|WH\d{2})\b")
 
 
@@ -73,6 +77,94 @@ def extract_shared_filters(question: str) -> dict[str, Any]:
     return filters
 
 
+def _week_of_month(target: date) -> int:
+    return min(5, max(1, ((target.day - 1) // 7) + 1))
+
+
+def _infer_demand_table_type(question: str, allowed_tables: list[str] | None = None) -> str:
+    q = (question or "").lower()
+    allowed = set(allowed_tables or [])
+    if "p_demand" in allowed and "v_demand" not in allowed:
+        return "P"
+    if "v_demand" in allowed and "p_demand" not in allowed:
+        return "V"
+    if any(token in q for token in ("p版", "commit", "承诺", "承诺需求")):
+        return "P"
+    if any(token in q for token in ("v版", "forecast", "预测需求", "原始需求", "客户需求")):
+        return "V"
+    return ""
+
+
+def _resolve_relative_week_prefix(relative_week: str) -> str:
+    base = date.today()
+    offset_days = {
+        "previous_week": -7,
+        "current_week": 0,
+        "next_week": 7,
+    }.get(relative_week, 0)
+    target = base + timedelta(days=offset_days)
+    return f"{target.year}{target.month:02d}W{_week_of_month(target)}"
+
+
+def _build_demand_version_filters(
+    question: str,
+    filters: dict[str, Any],
+    *,
+    allowed_tables: list[str] | None = None,
+) -> dict[str, Any]:
+    allowed = set(allowed_tables or [])
+    if allowed and "p_demand" not in allowed and "v_demand" not in allowed:
+        return {}
+
+    q = (question or "").strip()
+    exact_match = _DEMAND_VERSION_EXACT.search(q)
+    if exact_match:
+        exact = exact_match.group(1).upper()
+        table_type = "P" if "P" in exact else "V" if "V" in exact else ""
+        return {
+            "pm_version_exact": exact,
+            "pm_version_prefix": exact.split(table_type, 1)[0] if table_type else exact,
+            "pm_version_table_type": table_type,
+        }
+
+    prefix_match = _DEMAND_WEEK_PREFIX.search(q)
+    if prefix_match:
+        return {
+            "pm_version_prefix": prefix_match.group(1).upper(),
+            "pm_version_table_type": _infer_demand_table_type(q, allowed_tables),
+        }
+
+    ymw_match = _YEAR_MONTH_WEEK.search(q)
+    if ymw_match:
+        year = int(ymw_match.group(1))
+        month = int(ymw_match.group(2))
+        week_token = ymw_match.group(3)
+        if week_token in {"一", "二", "三", "四", "五"}:
+            week = {
+                "一": 1,
+                "二": 2,
+                "三": 3,
+                "四": 4,
+                "五": 5,
+            }[week_token]
+        else:
+            week = int(week_token)
+        if 1 <= month <= 12:
+            return {
+                "pm_version_prefix": f"{year}{month:02d}W{week}",
+                "pm_version_table_type": _infer_demand_table_type(q, allowed_tables),
+            }
+
+    relative_week = str(filters.get("relative_week") or "")
+    if relative_week:
+        return {
+            "pm_version_prefix": _resolve_relative_week_prefix(relative_week),
+            "pm_version_table_type": _infer_demand_table_type(q, allowed_tables),
+        }
+
+    return {}
+
+
 def apply_filter_refinement(
     *,
     question: str,
@@ -96,6 +188,14 @@ def apply_filter_refinement(
 
     if intent == "simple_table_query" or single_table:
         refined_filters = refine_simple_filters(question, refined_filters)
+
+    demand_filters = _build_demand_version_filters(
+        question,
+        refined_filters,
+        allowed_tables=allowed_tables,
+    )
+    if demand_filters:
+        refined_filters.update({key: value for key, value in demand_filters.items() if value})
 
     if allowed_tables and refined_filters.get("table") not in allowed_tables:
         refined_filters.pop("table", None)

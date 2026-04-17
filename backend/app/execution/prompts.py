@@ -7,6 +7,27 @@ def _format_lines(items: tuple[str, ...]) -> str:
     return "\n".join(f"- {item}" for item in items if item)
 
 
+def _build_demand_version_hint(structured_filters: dict) -> str:
+    exact = str((structured_filters or {}).get("pm_version_exact") or "")
+    prefix = str((structured_filters or {}).get("pm_version_prefix") or "")
+    table_type = str((structured_filters or {}).get("pm_version_table_type") or "")
+    if not exact and not prefix:
+        return ""
+
+    lines = [
+        "Demand 版本规则：PM_VERSION 与时间相关，常见格式为 YYYYMMWn + 表类型/版次。",
+    ]
+    if exact:
+        lines.append(f"当前问题已有完整版本号，必须使用 PM_VERSION = '{exact}' 精确过滤。")
+    elif prefix:
+        if table_type in {"P", "V"}:
+            lines.append(f"当前问题已归一为周前缀 {prefix}，应优先使用 PM_VERSION LIKE '{prefix}{table_type}%'。")
+        else:
+            lines.append(f"当前问题已归一为周前缀 {prefix}，应优先使用 PM_VERSION LIKE '{prefix}%'.")
+    lines.append("若只有月粒度时间且没有 pm_version_prefix/pm_version_exact，不要臆造某一周的 PM_VERSION。")
+    return "\n".join(f"- {line}" for line in lines)
+
+
 GLOBAL_SQL_CONSTRAINTS = (
     "只输出纯 SQL，不要输出解释。",
     "只能使用 SELECT 或 WITH + SELECT。",
@@ -51,6 +72,7 @@ def build_text2sql_prompt(
     rule_text = _format_lines(sql_rules)
     global_text = _format_lines(GLOBAL_SQL_CONSTRAINTS)
     filter_text = json.dumps(structured_filters or {}, ensure_ascii=False, indent=2)
+    demand_hint = _build_demand_version_hint(structured_filters or {})
     return f"""你是一个资深的制造企业 MySQL 8.0 专家，当前负责 {domain_label} 技能。
 
 【全局约束】
@@ -69,6 +91,9 @@ def build_text2sql_prompt(
 
 【结构化过滤条件】
 {filter_text}
+
+【版本时间规则】
+{demand_hint or "- 无额外版本时间约束"}
 
 【SQL 规则】
 {rule_text}
@@ -92,6 +117,7 @@ def build_reflect_sql_prompt(
     convention_text = _format_lines(field_conventions)
     rule_text = _format_lines(sql_rules)
     filter_text = json.dumps(structured_filters or {}, ensure_ascii=False, indent=2)
+    demand_hint = _build_demand_version_hint(structured_filters or {})
     return f"""你是 {domain_label} 技能的 MySQL 修复助手。刚才生成的 SQL 执行失败了。
 
 【问题】
@@ -105,6 +131,9 @@ def build_reflect_sql_prompt(
 
 【结构化过滤条件】
 {filter_text}
+
+【版本时间规则】
+{demand_hint or "- 无额外版本时间约束"}
 
 【SQL 规则】
 {rule_text}

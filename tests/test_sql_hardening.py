@@ -55,6 +55,28 @@ class SqlHardeningTestCase(unittest.TestCase):
         )
         self.assertTrue(any("版本过滤条件" in issue for issue in issues))
 
+    def test_lint_requires_demand_version_prefix_filter(self):
+        sql = "SELECT SUM(REQUIREMENT_QTY) FROM p_demand WHERE CUSTOMER = 'A'"
+        issues = lint_sql(
+            sql,
+            question="看下2026年4月第三周P版承诺需求",
+            domain="demand",
+            structured_filters={"pm_version_prefix": "202604W3", "pm_version_table_type": "P"},
+            allowed_tables=["p_demand", "product_attributes", "product_mapping"],
+        )
+        self.assertTrue(any("版本前缀过滤条件 202604W3P" in issue for issue in issues))
+
+    def test_lint_accepts_demand_version_prefix_filter(self):
+        sql = "SELECT SUM(REQUIREMENT_QTY) FROM p_demand WHERE PM_VERSION LIKE '202604W3P%'"
+        issues = lint_sql(
+            sql,
+            question="看下2026年4月第三周P版承诺需求",
+            domain="demand",
+            structured_filters={"pm_version_prefix": "202604W3", "pm_version_table_type": "P"},
+            allowed_tables=["p_demand", "product_attributes", "product_mapping"],
+        )
+        self.assertFalse(any("版本前缀过滤条件" in issue for issue in issues))
+
     def test_lint_blocks_meaningless_sales_helper_join(self):
         sql = (
             "SELECT s.report_month, s.sales_qty FROM sales_financial_perf s "
@@ -93,6 +115,22 @@ class SqlHardeningTestCase(unittest.TestCase):
             allowed_tables=["weekly_rolling_plan"],
         )
         self.assertTrue(any("占位或示例字面值" in issue for issue in issues))
+
+    def test_lint_accepts_multiline_where_for_time_filtered_query(self):
+        sql = (
+            "SELECT factory_code, SUM(TTL_Qty) AS total_ttl_qty\n"
+            "FROM daily_inventory\n"
+            "WHERE report_date = CURDATE()\n"
+            "GROUP BY factory_code"
+        )
+        issues = lint_sql(
+            sql,
+            question="今天各厂 TTL 库存还有多少",
+            domain="inventory",
+            structured_filters={"relative_day": "today"},
+            allowed_tables=["daily_inventory", "product_attributes", "product_mapping"],
+        )
+        self.assertFalse(any("时间条件" in issue for issue in issues))
 
     def test_strip_suspicious_literal_filters(self):
         sql = (
