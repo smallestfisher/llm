@@ -1,5 +1,33 @@
 import type { MessageRow, RunRow, ThreadDetail } from './api'
 
+export type RunStepState = 'pending' | 'active' | 'completed' | 'failed' | 'cancelled'
+export type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
+
+const RUN_STATUS_LABELS: Record<string, string> = {
+  pending: '排队中',
+  running: '运行中',
+  cancelling: '停止中',
+  completed: '已完成',
+  failed: '失败',
+  cancelled: '已停止',
+}
+
+const RUN_STEP_LABELS: Record<string, string> = {
+  queued: '任务排队',
+  route: '路由与判域',
+  workflow: '技能编排与 SQL 执行',
+  answer: '组织最终回答',
+  completed: '处理完成',
+}
+
+function normalizeRunStep(currentStep: string | null | undefined): string {
+  if (!currentStep) return ''
+  if (currentStep === 'queued') return 'queued'
+  if (currentStep === 'completed') return 'completed'
+  if (['route', 'workflow', 'answer'].includes(currentStep)) return currentStep
+  return ''
+}
+
 export function getActiveRun(activeThread: ThreadDetail | null): RunRow | null {
   if (!activeThread?.runs?.length) return null
   const runs = [...activeThread.runs]
@@ -14,17 +42,61 @@ export function getActiveRun(activeThread: ThreadDetail | null): RunRow | null {
 export function getRunSteps(activeRun: RunRow | null) {
   if (!activeRun) return []
   const ordered = ['route', 'workflow', 'answer']
-  const labels: Record<string, string> = {
-    route: '路由与判域',
-    workflow: '技能编排与 SQL 执行',
-    answer: '组织最终回答',
+  const normalizedStep = normalizeRunStep(activeRun.current_step)
+  const activeIndex = ordered.indexOf(normalizedStep)
+
+  if (activeRun.status === 'completed' || normalizedStep === 'completed') {
+    return ordered.map((key) => ({
+      key,
+      label: RUN_STEP_LABELS[key],
+      state: 'completed' as RunStepState,
+    }))
   }
-  const activeIndex = ordered.indexOf(activeRun.current_step || '')
+
   return ordered.map((key, index) => ({
     key,
-    label: labels[key],
-    state: activeIndex < 0 ? 'pending' : index < activeIndex ? 'completed' : index === activeIndex ? 'active' : 'pending',
+    label: RUN_STEP_LABELS[key],
+    state:
+      activeIndex < 0
+        ? 'pending'
+        : index < activeIndex
+          ? 'completed'
+          : index === activeIndex
+            ? activeRun.status === 'failed'
+              ? 'failed'
+              : activeRun.status === 'cancelled'
+                ? 'cancelled'
+                : 'active'
+            : 'pending',
   }))
+}
+
+export function getRunStatusLabel(status: string | null | undefined): string {
+  if (!status) return '未知状态'
+  return RUN_STATUS_LABELS[status] || status
+}
+
+export function getRunStatusTone(status: string | null | undefined): StatusTone {
+  switch (status) {
+    case 'running':
+    case 'pending':
+      return 'info'
+    case 'completed':
+      return 'success'
+    case 'cancelling':
+      return 'warning'
+    case 'failed':
+      return 'danger'
+    case 'cancelled':
+      return 'neutral'
+    default:
+      return 'neutral'
+  }
+}
+
+export function getRunStepLabel(currentStep: string | null | undefined): string {
+  if (!currentStep) return ''
+  return RUN_STEP_LABELS[normalizeRunStep(currentStep)] || currentStep
 }
 
 export function getLatestAssistantMessageIds(activeThread: ThreadDetail | null): Set<number> {

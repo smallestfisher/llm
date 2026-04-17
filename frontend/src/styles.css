@@ -446,12 +446,63 @@ textarea {
 }
 
 .status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   padding: 0.2rem 0.6rem;
   background: var(--bg-input);
   border-radius: 6px;
   font-size: 0.7rem;
   font-weight: 700;
   color: var(--text-muted);
+}
+
+.status-pill--neutral {
+  background: var(--bg-input);
+  color: var(--text-muted);
+}
+
+.status-pill--info {
+  background: rgba(0, 122, 255, 0.1);
+  color: #0a63c9;
+}
+
+.status-pill--success {
+  background: rgba(24, 160, 88, 0.12);
+  color: #147a45;
+}
+
+.status-pill--warning {
+  background: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+}
+
+.status-pill--danger {
+  background: rgba(220, 38, 38, 0.12);
+  color: #c62828;
+}
+
+.run-panel {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.run-panel-summary,
+.run-panel-steps {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.run-panel-detail {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: rgba(252, 252, 253, 0.9);
 }
 
 /* -------------------------------------------------------------------------- */

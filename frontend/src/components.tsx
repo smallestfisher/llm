@@ -1,6 +1,6 @@
 import { useEffect, useRef, type FormEvent, type ReactNode } from 'react'
 import type { AuditRow, MessageRow, RunRow, ThreadDetail, ThreadSummary, UserRow } from './api'
-import { formatDisplayDate } from './view-models'
+import { formatDisplayDate, getRunStatusLabel, getRunStatusTone, getRunStepLabel, type RunStepState } from './view-models'
 
 type ThreadListProps = {
   threads: ThreadSummary[]
@@ -15,17 +15,17 @@ export function ThreadList({ threads, activeThreadId, busy, onSelect, onDelete }
     <div className="thread-list">
       {threads.map((thread) => (
         <div key={thread.public_id} className="thread-row">
-          <button 
-            className={`thread-item ${thread.public_id === activeThreadId ? 'active' : ''}`} 
+          <button
+            className={`thread-item ${thread.public_id === activeThreadId ? 'active' : ''}`}
             onClick={() => onSelect(thread.public_id)}
             title={thread.title || '新会话'}
           >
             <span className="thread-item-label">{thread.title || '新会话'}</span>
           </button>
-          <button 
-            className="thread-delete" 
+          <button
+            className="thread-delete"
             type="button"
-            disabled={busy} 
+            disabled={busy}
             onClick={() => onDelete(thread.public_id)}
             title="删除会话"
           >
@@ -40,18 +40,61 @@ export function ThreadList({ threads, activeThreadId, busy, onSelect, onDelete }
 type RunPanelProps = {
   activeRun: RunRow | null
   activeRunDetail: string
-  runSteps: Array<{ key: string; label: string; state: string }>
+  runSteps: Array<{ key: string; label: string; state: RunStepState }>
 }
 
-export function RunPanel({ activeRun, runSteps }: RunPanelProps) {
+function stepTone(state: RunStepState) {
+  switch (state) {
+    case 'active':
+      return 'info'
+    case 'completed':
+      return 'success'
+    case 'failed':
+      return 'danger'
+    case 'cancelled':
+      return 'neutral'
+    default:
+      return 'neutral'
+  }
+}
+
+function stepPrefix(state: RunStepState) {
+  switch (state) {
+    case 'completed':
+      return '✓ '
+    case 'failed':
+      return '! '
+    case 'cancelled':
+      return '- '
+    default:
+      return ''
+  }
+}
+
+export function RunPanel({ activeRun, activeRunDetail, runSteps }: RunPanelProps) {
   if (!activeRun) return null
+
+  const statusLabel = getRunStatusLabel(activeRun.status)
+  const statusTone = getRunStatusTone(activeRun.status)
+  const stepLabel = getRunStepLabel(activeRun.current_step)
+
   return (
-    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
-      {runSteps.map((step) => (
-        <div key={step.key} className={`status-pill ${step.state === 'active' ? 'active' : ''}`}>
-           {step.state === 'completed' ? '✓' : ''} {step.label}
-        </div>
-      ))}
+    <div className="run-panel">
+      <div className="run-panel-summary">
+        <span className={`status-pill status-pill--${statusTone}`}>{statusLabel}</span>
+        {stepLabel && <span className="status-pill status-pill--neutral">当前阶段: {stepLabel}</span>}
+        {activeRun.kind && <span className="status-pill status-pill--neutral">模式: {activeRun.kind}</span>}
+      </div>
+      <div className="run-panel-steps">
+        {runSteps.map((step) => (
+          <div key={step.key} className={`status-pill status-pill--${stepTone(step.state)}`}>
+            {stepPrefix(step.state)}{step.label}
+          </div>
+        ))}
+      </div>
+      {activeRunDetail && activeRun.status !== 'completed' && (
+        <div className="run-panel-detail">{activeRunDetail}</div>
+      )}
     </div>
   )
 }
@@ -91,6 +134,9 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const messageListRef = useRef<HTMLDivElement | null>(null)
   const isEmptyState = !showThinking && !(activeThread?.messages?.length)
+  const headerStatusLabel = activeRun ? getRunStatusLabel(activeRun.status) : ''
+  const headerStatusTone = activeRun ? getRunStatusTone(activeRun.status) : 'neutral'
+  const headerStepLabel = activeRun ? getRunStepLabel(activeRun.current_step) : ''
 
   useEffect(() => {
     if (isEmptyState) {
@@ -114,8 +160,9 @@ export function ChatPanel({
           <h2 style={{ fontSize: '1rem', fontWeight: 700 }}>{activeThreadTitle || '新建对话'}</h2>
           {activeThread?.updated_at && <span style={{ fontSize: '0.7rem', color: 'var(--text-desc)' }}>{formatDisplayDate(activeThread.updated_at)}</span>}
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          {activeRun && <span className="status-pill active">{activeRun.current_step}</span>}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {activeRun && <span className={`status-pill status-pill--${headerStatusTone}`}>{headerStatusLabel}</span>}
+          {activeRun && headerStepLabel && <span className="status-pill status-pill--neutral">{headerStepLabel}</span>}
         </div>
       </header>
 
@@ -138,15 +185,15 @@ export function ChatPanel({
       <div className="composer-area">
         <div className="composer-container">
           <form onSubmit={onSend} className="composer-dock">
-            <textarea 
-              value={question} 
-              onChange={(e) => onQuestionChange(e.target.value)} 
-              placeholder={renderComposerHint || "发送消息..."} 
-              rows={1} 
+            <textarea
+              value={question}
+              onChange={(e) => onQuestionChange(e.target.value)}
+              placeholder={renderComposerHint || '发送消息...'}
+              rows={1}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  onSend(e as any);
+                  e.preventDefault()
+                  onSend(e as any)
                 }
               }}
             />
@@ -220,7 +267,7 @@ export function AdminUsersPanel({ adminUsers, busy, drafts, onDraftChange, onTog
                 <strong style={{ fontSize: '1.15rem', letterSpacing: '-0.01em' }}>{user.username}</strong>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-desc)', marginTop: '2px' }}>Role: {user.roles.join(', ')}</span>
               </div>
-              <span className={`status-pill ${user.is_active ? 'active' : ''}`}>{user.is_active ? 'Active' : 'Banned'}</span>
+              <span className={`status-pill ${user.is_active ? 'status-pill--success' : 'status-pill--danger'}`}>{user.is_active ? 'Active' : 'Banned'}</span>
             </div>
             <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
               <button
@@ -276,7 +323,7 @@ export function AuditPanel({ audits }: AuditPanelProps) {
               <tr key={row.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
                 <td style={{ padding: '1.25rem 1rem', color: 'var(--primary-color)', fontWeight: 700 }}>{row.action}</td>
                 <td style={{ padding: '1.25rem 1rem', color: 'var(--text-secondary)' }}>{row.target_type}</td>
-                <td style={{ padding: '1.25rem 1rem' }}><span className="status-pill">{row.status}</span></td>
+                <td style={{ padding: '1.25rem 1rem' }}><span className="status-pill status-pill--neutral">{row.status}</span></td>
                 <td style={{ padding: '1.25rem 1rem', fontWeight: 500 }}>{row.actor_username || 'system'}</td>
                 <td style={{ padding: '1.25rem 1rem', fontSize: '0.75rem', color: 'var(--text-desc)', fontFamily: 'monospace' }}>{formatDisplayDate(row.created_at)}</td>
               </tr>
@@ -303,13 +350,13 @@ export function MessageCard({ message, busy, canRegenerate, onRegenerate }: Mess
   const rowCount = Number(metadata.row_count || 0)
   const rows = Array.isArray(metadata.rows) ? metadata.rows : []
   const columns = Array.isArray(metadata.columns) ? metadata.columns : []
-  
+
   return (
     <article className={`message-card ${message.role === 'assistant' ? 'assistant' : 'user'}`}>
       <div className="avatar">
         {message.role === 'assistant' ? 'B' : 'U'}
       </div>
-      
+
       <div className="message-content">
         <div className="message-bubble">
           {message.content}
@@ -362,10 +409,10 @@ export function MessageCard({ message, busy, canRegenerate, onRegenerate }: Mess
             </>
           )}
           {message.role === 'assistant' && canRegenerate && (
-            <button 
-              className="btn-ghost message-regenerate" 
-              style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }} 
-              onClick={() => onRegenerate(message.id)} 
+            <button
+              className="btn-ghost message-regenerate"
+              style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+              onClick={() => onRegenerate(message.id)}
               disabled={busy}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
