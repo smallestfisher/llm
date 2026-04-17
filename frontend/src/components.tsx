@@ -565,12 +565,36 @@ type MessageCardProps = {
   message: MessageRow
   busy: boolean
   canRegenerate: boolean
+  canViewSqlDebug: boolean
   onRegenerate: (messageId: number) => void
 }
 
-export function MessageCard({ message, busy, canRegenerate, onRegenerate }: MessageCardProps) {
+function formatSqlForDisplay(rawSql: string): string {
+  const source = (rawSql || '').trim()
+  if (!source) return ''
+
+  const normalized = source
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\t/g, '  ')
+
+  if (normalized.includes('\n')) {
+    return normalized
+  }
+
+  return normalized
+    .replace(/\s+/g, ' ')
+    .replace(/\b(SELECT|FROM|WHERE|GROUP BY|HAVING|ORDER BY|LIMIT|OFFSET)\b/gi, '\n$1')
+    .replace(/\b(LEFT JOIN|RIGHT JOIN|INNER JOIN|FULL JOIN|CROSS JOIN|JOIN)\b/gi, '\n$1')
+    .replace(/\b(AND|OR)\b/gi, '\n  $1')
+    .replace(/^\n+/, '')
+    .trim()
+}
+
+export function MessageCard({ message, busy, canRegenerate, canViewSqlDebug, onRegenerate }: MessageCardProps) {
   const metadata = message.metadata || {}
   const sqlQuery = typeof metadata.sql_query === 'string' ? metadata.sql_query : ''
+  const sqlDisplay = formatSqlForDisplay(sqlQuery)
   const route = metadata.route as Record<string, unknown> | undefined
   const activeSkill = typeof metadata.active_skill === 'string' ? metadata.active_skill : ''
   const rowCount = Number(metadata.row_count || 0)
@@ -614,15 +638,17 @@ export function MessageCard({ message, busy, canRegenerate, onRegenerate }: Mess
           </div>
         )}
 
-        {message.role === 'assistant' && sqlQuery && (
+        {message.role === 'assistant' && canViewSqlDebug && sqlDisplay && (
           <div className="embedded-card">
-            <div className="sql-header">
-              <span>SQL ENGINE</span>
-              <span>READ ONLY</span>
-            </div>
-            <div style={{ background: '#f9f9fb', padding: '1rem' }}>
-              <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '0.8rem', color: '#444', overflowX: 'auto' }}>{sqlQuery}</pre>
-            </div>
+            <details className="sql-debug-details">
+              <summary className="sql-debug-summary">
+                <span>查看 SQL</span>
+                <span>READ ONLY</span>
+              </summary>
+              <div className="sql-debug-body">
+                <pre className="sql-pre">{sqlDisplay}</pre>
+              </div>
+            </details>
           </div>
         )}
 

@@ -44,6 +44,7 @@ const VIEW_OPTIONS: Array<{ key: View; label: string; adminOnly?: boolean }> = [
 
 const RUN_POLL_INTERVAL_MS = 1200
 const METRICS_POLL_INTERVAL_MS = 5000
+const SQL_DEBUG_UI_ENABLED = (String(import.meta.env.VITE_SQL_DEBUG_UI_ENABLED ?? '1').toLowerCase() !== '0')
 
 type Session = {
   token: string
@@ -162,6 +163,7 @@ function renderTimeline(
   hasResolvedThread: boolean,
   latestAssistantMessages: Set<number>,
   busy: boolean,
+  canViewSqlDebug: boolean,
   onRegenerate: (messageId: number) => void,
   onPickQuickSuggestion: (value: string) => void,
 ) {
@@ -180,6 +182,7 @@ function renderTimeline(
           message={message}
           busy={busy}
           canRegenerate={isRegeneratableMessage(message, latestAssistantMessages)}
+          canViewSqlDebug={canViewSqlDebug}
           onRegenerate={onRegenerate}
         />
       ))}
@@ -222,6 +225,7 @@ export function App() {
   const latestAssistantMessages = useMemo(() => getLatestAssistantMessageIds(activeThread), [activeThread])
   const activeRunDetail = useMemo(() => getActiveRunDetail(activeRun), [activeRun])
   const hasRunningRun = useMemo(() => getHasRunningRun(activeRun), [activeRun])
+  const canViewSqlDebug = useMemo(() => Boolean(isAdmin && SQL_DEBUG_UI_ENABLED), [isAdmin])
   const activeThreadTitle = activeThread?.title || '新对话'
   const hasResolvedThread = !isBootstrappingSession && Boolean(activeThreadId ? activeThread : threads.length === 0)
   const canSend = Boolean(!busy && !runBusy && session?.token && question.trim())
@@ -788,7 +792,7 @@ export function App() {
             showThinking={isChatLoading}
             hasRunningRun={hasRunningRun}
             activeRun={activeRun}
-            renderMainTimeline={() => renderTimeline(activeThread, hasResolvedThread, latestAssistantMessages, busy || runBusy, handleRegenerate, handlePickQuickSuggestion)}
+            renderMainTimeline={() => renderTimeline(activeThread, hasResolvedThread, latestAssistantMessages, busy || runBusy, canViewSqlDebug, handleRegenerate, handlePickQuickSuggestion)}
             renderRunInspector={() => (
               <div style={{ maxWidth: '800px', margin: '0 auto 1.5rem', width: '100%' }}>
                 <RunPanel

@@ -282,6 +282,7 @@ input:focus {
 .message-list {
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 2rem 1.5rem 2rem;
   max-width: 860px;
   width: 100%;
@@ -369,6 +370,10 @@ textarea {
   flex-direction: column;
 }
 
+.message-content > * {
+  max-width: 100%;
+}
+
 .assistant .message-content {
   align-items: flex-start;
 }
@@ -443,6 +448,46 @@ textarea {
   border-radius: 12px;
   overflow: hidden;
   margin-top: 1rem;
+  max-width: 100%;
+}
+
+.sql-pre {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.8rem;
+  color: #444;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.sql-debug-details {
+  width: 100%;
+}
+
+.sql-debug-summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: #f5f6fa;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sql-debug-summary::-webkit-details-marker {
+  display: none;
+}
+
+.sql-debug-body {
+  background: #f9f9fb;
+  padding: 1rem;
 }
 
 .status-pill {

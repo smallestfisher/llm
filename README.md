@@ -156,7 +156,53 @@ ALERT_P95_MS_THRESHOLD=15000
 ALERT_CACHE_HIT_RATE_MIN=0.2
 ALERT_MIN_SAMPLES=20
 ALERT_COOLDOWN_SEC=300
+
+# Frontend debug visibility: 1=admin 可展开查看 SQL, 0=前端全量隐藏 SQL
+VITE_SQL_DEBUG_UI_ENABLED=1
 ```
+
+变量含义：
+
+| 变量 | 含义 | 备注 |
+|---|---|---|
+| `DB_URI` | 业务数据源连接串（SQL 实际查询的库） | 必填；如 MySQL 生产库 |
+| `BACKEND_DB_URI` | 应用后台库连接串（用户、会话、运行记录、审计） | 与 `DB_URI` 分离，默认本地 sqlite |
+| `OPENAI_BASE_URL` | LLM 网关地址（OpenAI 兼容接口） | 例如 vLLM/代理网关的 `/v1` |
+| `OPENAI_API_KEY` | 调用 LLM 网关的密钥 | 必填 |
+| `LLM_MODEL` | 通用默认模型 | 未单独指定阶段模型时回退到它 |
+| `LLM_MODEL_ROUTER` | 路由阶段模型 | 识别领域/路径 |
+| `LLM_MODEL_GUARD` | SQL 守卫阶段模型 | 规则校验/轻修正 |
+| `LLM_MODEL_SQL` | SQL 生成阶段模型 | 通常最耗时 |
+| `LLM_MODEL_REFLECT` | SQL 反思修复阶段模型 | SQL 首轮失败时使用 |
+| `LLM_MODEL_ANSWER` | 最终答案生成阶段模型 | 负责面向用户的表达 |
+| `LLM_TEMPERATURE` | LLM 温度 | 生产建议 `0` 或低温 |
+| `LLM_TIMEOUT_SECONDS` | 单次 LLM 请求超时（秒） | 防止请求长时间挂起 |
+| `LLM_MAX_RETRIES` | 单次 LLM 请求最大重试次数 | 建议 `1-3` |
+| `SESSION_SECRET` | 会话签名密钥 | 可被 `BACKEND_SESSION_SECRET` 覆盖 |
+| `DEBUG_TRACE` | 是否打印更详细的推理/调试日志 | `1` 开启，生产建议 `0` |
+| `MAX_TABLE_ROWS` | 回复中最多展示的数据行数 | 仅影响回答展示，不影响 SQL 本身 |
+| `SAMPLE_LIMIT` | 结果过大时自动 `LIMIT` 的截断行数 | 控制内存与响应体体积 |
+| `AUTO_TRUNCATE_ROWS` | 触发自动截断的行数阈值 | 超过后用 `SAMPLE_LIMIT` 截断 |
+| `SQL_ENABLE_PRECOUNT` | 执行前是否先做 `COUNT` 预估 | `1` 更稳，`0` 更快 |
+| `SQL_CANDIDATE_COUNT` | SQL 候选数量上限 | 建议 `1-3` |
+| `SQL_CANDIDATE_EXPAND_SCORE` | 候选扩展分数阈值 | 首条候选分不够才继续扩展 |
+| `SQL_CANDIDATE_PROBE_LIMIT` | 候选探测执行时的 `LIMIT` | 越小越省时 |
+| `CROSS_DOMAIN_MAX_PARALLEL` | 跨域并行执行上限 | 26B 单卡建议 `1` |
+| `QUERY_CACHE_ENABLED` | 是否启用查询缓存 | `1` 开启 |
+| `QUERY_CACHE_MAX_SIZE` | 缓存最大条目数 | 到上限会淘汰旧数据 |
+| `QUERY_CACHE_TTL_SHORT` | 短 TTL（秒） | 高频动态查询建议较短 |
+| `QUERY_CACHE_TTL_LONG` | 长 TTL（秒） | 稳定口径查询可更长 |
+| `QUERY_CACHE_SCHEMA_VERSION` | 缓存版本号 | 调整口径后改版本可整体失效 |
+| `METRICS_PERSIST_ENABLED` | 是否落盘保存运行指标事件 | `1` 开启，便于重启后保留趋势 |
+| `METRICS_PERSIST_PATH` | 指标事件持久化文件路径 | JSONL 文件 |
+| `METRICS_DEFAULT_WINDOW_SEC` | 指标快照默认窗口（秒） | `/admin/metrics` 默认窗口 |
+| `METRICS_MAX_EVENT_AGE_SEC` | 指标事件最大保留时长（秒） | 超期事件会清理 |
+| `ALERT_FAILURE_RATE_THRESHOLD` | 失败率告警阈值 | 比例值，`0.2` 表示 20% |
+| `ALERT_P95_MS_THRESHOLD` | 端到端 P95 时延告警阈值（毫秒） | 例如 `15000`=15s |
+| `ALERT_CACHE_HIT_RATE_MIN` | 缓存命中率最低阈值 | 低于该值触发提示 |
+| `ALERT_MIN_SAMPLES` | 告警计算最小样本数 | 样本太少不告警 |
+| `ALERT_COOLDOWN_SEC` | 同类告警冷却时间（秒） | 避免日志刷屏 |
+| `VITE_SQL_DEBUG_UI_ENABLED` | 前端 SQL 调试展示开关 | `1`=仅 admin 可展开查看 SQL，`0`=前端全隐藏 |
 
 ### 26B 混合模型推荐参数
 
