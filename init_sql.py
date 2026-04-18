@@ -39,6 +39,34 @@ def month_str(base: datetime, offset: int = 0) -> str:
     return f"{year:04d}-{month:02d}"
 
 
+def pm_version_anchor_month(pm_version: str) -> datetime:
+    """
+    将 PM_VERSION(如 2026W03) 映射到对应周所在月份的月初日期。
+    若格式异常，回退到当前月。
+    """
+    try:
+        year = int(pm_version[:4])
+        week = int(pm_version[5:7])
+        if pm_version[4] != "W":
+            raise ValueError("invalid pm version format")
+        # 业务侧版本周通常按版本年份内周序解释，避免 ISO 周跨年导致落到前一年。
+        anchor_day = datetime(year, 1, 1) + timedelta(days=(week - 1) * 7)
+        return datetime(anchor_day.year, anchor_day.month, 1)
+    except Exception:
+        now = datetime.now()
+        return datetime(now.year, now.month, 1)
+
+
+def month_for_pm_version(pm_version: str) -> str:
+    """
+    业务规则：
+    MONTH 与 PM_VERSION 不必相同；
+    MONTH 在 PM_VERSION 对应时间往前 6 个月到当月内都视为合理范围。
+    """
+    anchor = pm_version_anchor_month(pm_version)
+    return month_str(anchor, random.randint(-6, 0))
+
+
 def build_product_catalog(size: int = 120) -> list[dict]:
     catalog: list[dict] = []
     for idx in range(1, size + 1):
@@ -291,16 +319,16 @@ def insert_product_mapping(cursor, catalog: list[dict]) -> None:
 def insert_v_demand(cursor, catalog: list[dict], start_dt: datetime, end_dt: datetime, rows: int = 600) -> None:
     data = []
     for _ in range(rows):
-        dt = random_day(start_dt, end_dt)
         base_qty = random.randint(1000, 50000)
         product = random.choice(catalog)
+        pm_version = random.choice(VERSION_POOL)
         data.append(
             (
-                random.choice(VERSION_POOL),
+                pm_version,
                 product["FGCODE"],
                 random.choice(SBU_LIST),
                 random.choice(CUSTOMERS),
-                month_str(dt, 0),
+                month_for_pm_version(pm_version),
                 base_qty,
                 int(base_qty * random.uniform(0.8, 1.2)),
                 int(base_qty * random.uniform(0.8, 1.2)),
@@ -323,17 +351,17 @@ def insert_v_demand(cursor, catalog: list[dict], start_dt: datetime, end_dt: dat
 def insert_p_demand(cursor, catalog: list[dict], start_dt: datetime, end_dt: datetime, rows: int = 600) -> None:
     data = []
     for _ in range(rows):
-        dt = random_day(start_dt, end_dt)
         base_qty = random.randint(1000, 50000)
         product = random.choice(catalog)
+        pm_version = random.choice(VERSION_POOL)
         data.append(
             (
-                random.choice(VERSION_POOL),
+                pm_version,
                 product["FGCODE"],
                 random.choice(SBU_LIST),
                 random.choice(BU_LIST),
                 random.choice(CUSTOMERS),
-                month_str(dt, 0),
+                month_for_pm_version(pm_version),
                 int(base_qty * random.uniform(0.8, 1.0)),
                 int(base_qty * random.uniform(0.8, 1.0)),
                 int(base_qty * random.uniform(0.8, 1.0)),
