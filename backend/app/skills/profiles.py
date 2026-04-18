@@ -124,9 +124,12 @@ SKILL_PROFILES: dict[str, SkillProfile] = {
             "优先回答需求规模、承诺规模、缺口",
         ),
         field_conventions=(
-            "v_demand/p_demand 为横表：MONTH 起始月，NEXT/LAST/MONTH4~7 后续月",
-            "V版优先 v_demand；P版/commit 优先 p_demand",
-            "仅在用户给版本号时过滤 PM_VERSION",
+            "v_demand/p_demand 为横表:MONTH 为起始月,NEXT/LAST/MONTH4~7 为后续第2~7个月",
+            "V版优先 v_demand;P版/commit 优先 p_demand",
+            "用户给完整版本号时按 PM_VERSION 精确过滤；给周粒度时间时可按 PM_VERSION 前缀过滤",
+            "用户只给月粒度时间时，不要臆造某一周 PM_VERSION,必须按横表月份口径统计",
+            "查询目标月份 M 时，不是只过滤 MONTH=M;凡是 MONTH、NEXT、LAST、MONTH4~7 任一槽位映射到 M 的数量都要计入",
+            "生成 SQL 时，单月查询优先“先展开横表再按目标月份过滤”，或等价地“按目标月份反推各槽位来源”"
         ),
         sql_rules=(
             "多月查询需正确展开横表月份字段",
