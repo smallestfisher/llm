@@ -134,6 +134,11 @@ LLM_MAX_RETRIES=2
 
 SESSION_SECRET=change-this-session-secret
 DEBUG_TRACE=0
+REGENERATE_BYPASS_CACHE=0
+CHAT_HISTORY_WINDOW_TURNS=0
+CHAT_HISTORY_SUMMARY_ENABLED=0
+CHAT_HISTORY_SUMMARY_MAX_ITEMS=6
+CHAT_HISTORY_SUMMARY_ITEM_MAX_CHARS=140
 MAX_TABLE_ROWS=200
 SAMPLE_LIMIT=5000
 AUTO_TRUNCATE_ROWS=50000
@@ -180,6 +185,11 @@ VITE_SQL_DEBUG_UI_ENABLED=1
 | `LLM_MAX_RETRIES` | 单次 LLM 请求最大重试次数 | 建议 `1-3` |
 | `SESSION_SECRET` | 会话签名密钥 | 可被 `BACKEND_SESSION_SECRET` 覆盖 |
 | `DEBUG_TRACE` | 是否打印更详细的推理/调试日志 | `1` 开启，生产建议 `0` |
+| `REGENERATE_BYPASS_CACHE` | 重新生成是否绕过缓存 | `1` 时 regenerate 不读写缓存 |
+| `CHAT_HISTORY_WINDOW_TURNS` | 历史窗口轮数 | `0` 关闭窗口裁剪；>0 仅保留最近 N 轮 |
+| `CHAT_HISTORY_SUMMARY_ENABLED` | 历史摘要开关 | 仅在启用窗口裁剪时生效 |
+| `CHAT_HISTORY_SUMMARY_MAX_ITEMS` | 历史摘要最多保留的早期问答条数 | 控制摘要长度 |
+| `CHAT_HISTORY_SUMMARY_ITEM_MAX_CHARS` | 历史摘要单条最大字符数 | 控制摘要密度 |
 | `MAX_TABLE_ROWS` | 回复中最多展示的数据行数 | 仅影响回答展示，不影响 SQL 本身 |
 | `SAMPLE_LIMIT` | 结果过大时自动 `LIMIT` 的截断行数 | 控制内存与响应体体积 |
 | `AUTO_TRUNCATE_ROWS` | 触发自动截断的行数阈值 | 超过后用 `SAMPLE_LIMIT` 截断 |

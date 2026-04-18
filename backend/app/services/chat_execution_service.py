@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 from sqlalchemy.orm import Session
@@ -19,6 +20,7 @@ from app.workflow.state import CancelledError, RouteDecision
 
 logger = get_logger(__name__)
 BACKGROUND_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="chat-run")
+REGENERATE_BYPASS_CACHE = os.getenv("REGENERATE_BYPASS_CACHE", "0") == "1"
 
 
 class ChatExecutionService:
@@ -145,31 +147,36 @@ class ChatExecutionService:
             initial_decision = route_question(question)
             metrics_service.mark_run_route(run.public_id, initial_decision.route)
             route_snapshot = self._build_route_snapshot(initial_decision)
-            cache_key = query_cache_service.build_key(question=question, decision=initial_decision)
-            cached_result = query_cache_service.get(cache_key)
-            if cached_result:
-                metrics_service.record_cache_hit()
-                cached_result["cache_hit"] = True
-                self.run_service.update_run_progress(
-                    db,
-                    run,
-                    current_step="completed",
-                    route=cached_result.get("route") or initial_decision.route,
-                    route_reason=cached_result.get("route_reason") or initial_decision.reason,
-                    sql_query=cached_result.get("sql_query", ""),
-                    error_message=cached_result.get("sql_error", ""),
-                )
-                thread.updated_at = utcnow()
-                db.commit()
-                metadata = self._workflow_result_to_metadata(cached_result, route_snapshot)
-                answer = cached_result.get("final_answer") or f"[rewrite] 未生成最终回答：{question}"
-                self.run_service.complete_run(db, run, turn, answer, metadata)
-                thread.updated_at = utcnow()
-                db.commit()
-                metrics_service.mark_run_finished(run.public_id, status="completed", route=initial_decision.route)
-                self._publish_thread(thread.id, event="run_finished")
-                return
-            metrics_service.record_cache_miss()
+            bypass_cache = REGENERATE_BYPASS_CACHE and run.kind == "regenerate"
+            cache_key = ""
+            if not bypass_cache:
+                cache_key = query_cache_service.build_key(question=question, decision=initial_decision)
+                cached_result = query_cache_service.get(cache_key)
+                if cached_result:
+                    metrics_service.record_cache_hit()
+                    cached_result["cache_hit"] = True
+                    self.run_service.update_run_progress(
+                        db,
+                        run,
+                        current_step="completed",
+                        route=cached_result.get("route") or initial_decision.route,
+                        route_reason=cached_result.get("route_reason") or initial_decision.reason,
+                        sql_query=cached_result.get("sql_query", ""),
+                        error_message=cached_result.get("sql_error", ""),
+                    )
+                    thread.updated_at = utcnow()
+                    db.commit()
+                    metadata = self._workflow_result_to_metadata(cached_result, route_snapshot)
+                    answer = cached_result.get("final_answer") or f"[rewrite] 未生成最终回答：{question}"
+                    self.run_service.complete_run(db, run, turn, answer, metadata)
+                    thread.updated_at = utcnow()
+                    db.commit()
+                    metrics_service.mark_run_finished(run.public_id, status="completed", route=initial_decision.route)
+                    self._publish_thread(thread.id, event="run_finished")
+                    return
+                metrics_service.record_cache_miss()
+            else:
+                logger.info("cache bypassed for regenerate run_id={}", run.public_id)
 
             def is_cancelled() -> bool:
                 check_db = SessionLocal()
@@ -226,7 +233,7 @@ class ChatExecutionService:
                 self.run_service.cancel_run(db, run, turn)
                 metrics_service.mark_run_finished(run.public_id, status="cancelled", route=initial_decision.route)
             else:
-                if not workflow_result.get("sql_error"):
+                if (not bypass_cache) and cache_key and (not workflow_result.get("sql_error")):
                     query_cache_service.set(
                         key=cache_key,
                         value=self._cacheable_result(workflow_result),

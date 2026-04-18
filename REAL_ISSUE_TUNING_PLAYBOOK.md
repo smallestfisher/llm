@@ -120,42 +120,37 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 | SQL 慢 | 并发上限、预估计数、自动截断 | `CROSS_DOMAIN_MAX_PARALLEL`、`SQL_ENABLE_PRECOUNT`、`SAMPLE_LIMIT` |
 | 答案幻觉 | 证据绑定、空结果模板、答案模型 | `backend/app/presentation/answer_builder.py`、`LLM_MODEL_ANSWER` |
 | 不稳定超时 | 请求超时、重试次数、缓存 | `LLM_TIMEOUT_SECONDS`、`LLM_MAX_RETRIES`、`QUERY_CACHE_*` |
-| 追问误判 | 三态分类规则、同域补查继承、改写模式降本 | `backend/app/services/followup/*`、`FOLLOWUP_CLASSIFIER_ENABLED` |
 
 ---
 
-## 4. 追问专项调优（新增）
+## 4. 上下文专项调优（新增）
 
-当用户“第一次回答不满意继续追问”时，优先按三态处理：
-
-- `REWRITE_ONLY`：只改写/解释，不查 SQL
-- `SAME_SCOPE_QUERY`：补字段/补维度，继承上轮 scope 后重查 SQL
-- `NEW_QUERY`：走完整流程
+当前建议先不做复杂追问分流，统一保持完整查询流程；优化重点放在“上下文控制”。
 
 建议灰度顺序：
-1. 默认关闭：`FOLLOWUP_CLASSIFIER_ENABLED=0`
-2. 小流量开启：`FOLLOWUP_CLASSIFIER_ENABLED=1`
-3. 观察误判后再扩大流量
+1. 默认关闭窗口压缩：`CHAT_HISTORY_WINDOW_TURNS=0`
+2. 小流量开启窗口裁剪：例如 `CHAT_HISTORY_WINDOW_TURNS=6`
+3. 再开启摘要：`CHAT_HISTORY_SUMMARY_ENABLED=1`
+4. 根据准确率与时延继续调 `CHAT_HISTORY_SUMMARY_*`
 
 关键开关：
 
 | 变量 | 作用 | 建议 |
 |---|---|---|
-| `FOLLOWUP_CLASSIFIER_ENABLED` | 开启三态追问分流 | 先灰度再全量 |
-| `FOLLOWUP_LIGHT_ROUTE_MAX_CONTEXT_CHARS` | 改写模式引用上轮答案的最大长度 | 800-1500 |
 | `REGENERATE_BYPASS_CACHE` | regenerate 是否绕过缓存 | 质量优先开 `1`，成本优先保 `0` |
-| `CHAT_HISTORY_WINDOW_TURNS` | 历史窗口轮数 | 先 `0`，验证后再开 |
+| `CHAT_HISTORY_WINDOW_TURNS` | 历史窗口轮数 | 先 `0`，再灰度到 `4-8` |
 | `CHAT_HISTORY_SUMMARY_ENABLED` | 历史摘要开关 | 与窗口配套 |
+| `CHAT_HISTORY_SUMMARY_MAX_ITEMS` | 摘要包含的历史问答条数上限 | `4-8` |
+| `CHAT_HISTORY_SUMMARY_ITEM_MAX_CHARS` | 摘要单条字符上限 | `100-200` |
 
 上线后重点观察：
-- `followup` 相关 run 的失败率与时延
-- `same_scope_query` 命中率
-- 用户“补字段却没查数”的负反馈占比
-- token 消耗变化（改写类是否明显下降）
+- 长对话场景的失败率和时延
+- 回答连贯性（是否因裁剪丢关键信息）
+- token 消耗变化（长会话是否明显下降）
 
 ---
 
-## 5. 四个完整示例
+## 5. 三个完整示例
 
 ### 示例 A：路由错到 `demand`，实际应走 `inventory`
 
@@ -224,33 +219,6 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 
 复盘：
 - 在真实业务中，保守正确优先于“看起来聪明但不可信”
-
-### 示例 D：用户追问“再加字段”却被当成改写
-
-现象：
-- 问题 1：`“查 A1 产线昨天报废率”`
-- 追问：`“再加上班次字段并按班次拆分”`
-- 系统只做文字改写，没有重查 SQL
-
-分析：
-- 追问判定逻辑把“再加字段”误判为 `REWRITE_ONLY`
-- 缺少 `SAME_SCOPE_QUERY` 专用规则与路由继承
-
-改动（结构化）：
-1. 引入三态分类模块：`followup/classifier.py`
-2. 命中“补字段/补维度”时进入 `SAME_SCOPE_QUERY`
-3. 复用上一轮 `route + filters` 构造 `RouteDecision` 后重跑 workflow
-4. 判不准回退 `NEW_QUERY`
-
-验证：
-- 目标样本（补字段追问）正确路径命中率提升
-- 改写类追问 token 消耗下降
-- 主流程正确率不下降
-
-复盘：
-- 追问场景不能二分成“改写 or 新问题”，三态更稳
-
----
 
 ## 6. 建议的调优记录模板
 

@@ -63,8 +63,6 @@ SPA 通过后端返回的线程详情派生界面状态，核心包括：
   - 认证、线程、运行、管理员、审计接口
 - `backend/app/services/*`
   - 运行生命周期、线程查询、认证与管理员编排
-- `backend/app/services/followup/*`
-  - 追问三态分类与处理器（改写 / 同域补查 / 新问题）
 - `backend/app/models/*`
   - 重构版持久化模型
 - `backend/app/workflow/*`
@@ -105,10 +103,6 @@ SPA 通过后端返回的线程详情派生界面状态，核心包括：
 - 后端原生的 `workflow / semantic / execution / config` 技术栈
 - 旧模板 / 静态页面壳层退出主架构
 - 旧 `core` 业务树退出主运行链路
-- 追问三态分流（开关控制，默认关闭）
-  - `rewrite_only`：仅改写上一轮回答，不走 SQL
-  - `same_scope_query`：继承上一轮 route/filter，补字段或补维度后重跑 SQL
-  - `new_query`：按原流程走完整路由与工作流
 - `regenerate` 缓存绕过开关（默认关闭）
 - 历史窗口与摘要开关（默认关闭）
 
@@ -117,50 +111,15 @@ SPA 通过后端返回的线程详情派生界面状态，核心包括：
 - 继续瘦身前端顶层容器
 - 除轮询外更丰富的进度反馈机制
 - 结合真实生产数据进一步优化 prompt 与路由
-- 追问分类从规则向“规则 + 轻量模型置信度”演进
 
-## 追问分流架构（新增）
-
-目标：在不破坏主流程稳定性的前提下，降低“改写类追问”token 成本，并让“补字段追问”走正确的数据重查路径。
-
-### 模块边界
-
-- `backend/app/services/followup/types.py`
-  - 定义三态协议：`FollowupMode = REWRITE_ONLY / SAME_SCOPE_QUERY / NEW_QUERY`
-- `backend/app/services/followup/classifier.py`
-  - 追问分类器，输入 `question + previous_answer + previous_route_snapshot`
-- `backend/app/services/followup/handlers.py`
-  - 各模式处理器
-  - `rewrite_only` 只调用答案模型，不触发 SQL
-  - `same_scope_query` 生成 `RouteDecision` 覆用上一轮路由上下文
-- `backend/app/services/chat_execution_service.py`
-  - 仅负责分发与编排，不承载分类细节
-
-### 执行顺序
-
-1. 创建 `Run` 后，先获取上一轮 assistant 上下文（内容 + route metadata）。
-2. 若开启 `FOLLOWUP_CLASSIFIER_ENABLED=1`，执行三态分类。
-3. 分类结果分发：
-   - `REWRITE_ONLY` -> 直接产出回答并结束 run
-   - `SAME_SCOPE_QUERY` -> 继承上一轮 route/filter，继续执行 workflow
-   - `NEW_QUERY` -> 原始完整流程
-4. 任何异常或判定不稳，回退 `NEW_QUERY`（安全路径）。
-
-### 兼容与回滚
-
-- 默认开关关闭：`FOLLOWUP_CLASSIFIER_ENABLED=0`，行为与历史版本一致。
-- 保留旧开关别名兼容：`FOLLOWUP_LIGHT_ROUTE_ENABLED`。
-- 回滚方式：仅关闭开关，无需回退代码。
-
-## 运行链路（更新版）
+## 执行生命周期
 
 1. 前端把问题发给重构版 API
 2. 后端创建 `Turn` 与 `Run`
-3. （可选）追问三态分流
-4. 后台任务推动运行经过 `route / workflow / answer` 阶段
-5. 前端在运行激活期间持续轮询线程详情
-6. 只有运行成功完成后才会写入最终 assistant 消息
-7. cancel / regenerate 都围绕 `Run` 工作，而不是围绕页面壳层工作
+3. 后台任务推动运行经过 `route / workflow / answer` 阶段
+4. 前端在运行激活期间持续轮询线程详情
+5. 只有运行成功完成后才会写入最终 assistant 消息
+6. cancel / regenerate 都围绕 `Run` 工作，而不是围绕页面壳层工作
 
 ## 本地开发形态
 
@@ -189,11 +148,7 @@ npm run dev
 - 前端可以成功构建
 - send / regenerate / cancel 能走到终态
 - 管理数据仍然可用，包括 `last_login_at`
-- `FOLLOWUP_CLASSIFIER_ENABLED=0` 时行为与旧流程一致
-- `FOLLOWUP_CLASSIFIER_ENABLED=1` 时三态分流行为正确：
-  - 改写追问不走 SQL
-  - 补字段追问走同域重查
-  - 模糊追问回退完整流程
+- 历史窗口与摘要开关开启后不影响主流程可用性
 
 ## 当前保留下来的关键资产
 
