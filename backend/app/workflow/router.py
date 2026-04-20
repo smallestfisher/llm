@@ -440,6 +440,36 @@ def route_question_by_rules(question: str) -> tuple[RouteDecision, list[dict[str
     ), scored, explicit_hits, shared_filters
 
 
+def route_question_for_state(question: str, query_state: dict[str, Any] | None = None) -> RouteDecision:
+    state = dict(query_state or {})
+    hinted_domain = str(state.get("domain") or "").strip()
+    hinted_domains = [str(item).strip() for item in list(state.get("domains") or []) if str(item).strip() in {"production", "planning", "inventory", "demand", "sales"}]
+    query_text = str(state.get("query_text") or question or "").strip()
+    if hinted_domain in {"production", "planning", "inventory", "demand", "sales"}:
+        tables = _suggest_tables(hinted_domain, query_text)
+        return RouteDecision(
+            route=hinted_domain,
+            confidence=0.92,
+            matched_domains=[hinted_domain],
+            target_tables=tables,
+            filters=extract_shared_filters(query_text),
+            reason=f"query state selected {hinted_domain}",
+            confidence_breakdown={"method": "query_state", "hinted_domain": hinted_domain},
+        )
+    if hinted_domain == "cross_domain" and len(hinted_domains) >= 2:
+        tables = _build_tables_for_route("cross_domain", hinted_domains, explicit_table_hits(query_text), [_domain_score(query_text, domain) for domain in ("production", "planning", "inventory", "demand", "sales")], query_text)
+        return RouteDecision(
+            route="cross_domain",
+            confidence=0.9,
+            matched_domains=hinted_domains,
+            target_tables=tables,
+            filters=extract_shared_filters(query_text),
+            reason="query state selected cross_domain",
+            confidence_breakdown={"method": "query_state", "hinted_domain": hinted_domain, "matched_domains": hinted_domains},
+        )
+    return route_question(query_text)
+
+
 def route_question(question: str) -> RouteDecision:
     rule_decision, scored, explicit_hits, shared_filters = route_question_by_rules(question)
     if not scored:
@@ -454,4 +484,4 @@ def route_question(question: str) -> RouteDecision:
     return llm_decision
 
 
-__all__ = ["route_question", "route_question_by_rules"]
+__all__ = ["route_question", "route_question_by_rules", "route_question_for_state"]

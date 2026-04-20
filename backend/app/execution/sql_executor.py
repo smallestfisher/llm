@@ -73,6 +73,7 @@ def choose_best_sql_candidate(
     domain: str = "",
     structured_filters: dict[str, Any] | None = None,
     allowed_tables: list[str] | None = None,
+    query_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     seen: set[str] = set()
     ordered_candidates: list[str] = []
@@ -94,6 +95,7 @@ def choose_best_sql_candidate(
             domain=domain,
             structured_filters=structured_filters,
             allowed_tables=allowed_tables,
+            query_state=query_state,
         )
         score = 0
         probe_ok = False
@@ -147,6 +149,7 @@ def execute_sql(
     domain: str = "",
     structured_filters: dict[str, Any] | None = None,
     allowed_tables: list[str] | None = None,
+    query_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not sql:
         return {"db_result": [], "sql_error": "SQL 为空", "table_columns": [], "row_count": None, "truncated": False}
@@ -157,6 +160,7 @@ def execute_sql(
         domain=domain,
         structured_filters=structured_filters,
         allowed_tables=allowed_tables,
+        query_state=query_state,
     )
     if lint_issues:
         return {

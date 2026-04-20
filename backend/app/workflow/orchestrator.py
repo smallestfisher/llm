@@ -45,6 +45,8 @@ class CompiledOrchestratedWorkflow:
         question = (inputs.get("question") or "").strip()
         chat_history = list(inputs.get("chat_history") or [])
         decision = inputs.get("initial_decision") or route_question(question)
+        query_state = dict(inputs.get("query_state") or {})
+        query_mode = str(inputs.get("query_mode") or "standalone_query")
         logger.info(f"decision: {decision}")
         self._emit_event(config, "route_intent", decision.to_state_update())
         yield {"route_intent": decision.to_state_update()}
@@ -69,6 +71,8 @@ class CompiledOrchestratedWorkflow:
                 question=question,
                 chat_history=chat_history,
                 decision=generic_decision,
+                query_state=query_state,
+                query_mode=query_mode,
                 result_holder={},
                 emit_final_node=True,
                 config=config,
@@ -98,6 +102,8 @@ class CompiledOrchestratedWorkflow:
                     question=question,
                     chat_history=chat_history,
                     decision=generic_decision,
+                    query_state=query_state,
+                    query_mode=query_mode,
                     result_holder={},
                     emit_final_node=True,
                 ):
@@ -154,6 +160,8 @@ class CompiledOrchestratedWorkflow:
                             question=question,
                             chat_history=chat_history,
                             decision=subdecision,
+                            query_state=query_state,
+                            query_mode=query_mode,
                             config=parallel_config,
                         )
 
@@ -180,6 +188,8 @@ class CompiledOrchestratedWorkflow:
                             question=question,
                             chat_history=chat_history,
                             decision=subdecision,
+                            query_state=query_state,
+                            query_mode=query_mode,
                             config=parallel_config,
                         )
                     except Exception as exc:
@@ -215,6 +225,8 @@ class CompiledOrchestratedWorkflow:
                 question=question,
                 chat_history=chat_history,
                 decision=generic_decision,
+                query_state=query_state,
+                query_mode=query_mode,
                 result_holder={},
                 emit_final_node=True,
                 config=config,
@@ -229,6 +241,8 @@ class CompiledOrchestratedWorkflow:
             question=question,
             chat_history=chat_history,
             decision=decision,
+            query_state=query_state,
+            query_mode=query_mode,
             result_holder={},
             emit_final_node=True,
         ):
@@ -250,6 +264,8 @@ class CompiledOrchestratedWorkflow:
         question: str,
         chat_history: list[str],
         decision: RouteDecision,
+        query_state: dict,
+        query_mode: str,
         result_holder: dict,
         emit_final_node: bool,
         dispatch_update: dict | None = None,
@@ -265,6 +281,8 @@ class CompiledOrchestratedWorkflow:
             question=question,
             chat_history=chat_history,
             decision=decision,
+            query_state=query_state,
+            query_mode=query_mode,
         )
 
         self._check_cancellation(config)
@@ -389,6 +407,8 @@ class CompiledOrchestratedWorkflow:
         question: str,
         chat_history: list[str],
         decision: RouteDecision,
+        query_state: dict | None = None,
+        query_mode: str = "standalone_query",
         config: dict | None = None,
     ) -> SkillResult:
         self._check_cancellation(config)
@@ -396,6 +416,8 @@ class CompiledOrchestratedWorkflow:
             question=question,
             chat_history=chat_history,
             decision=decision,
+            query_state=query_state,
+            query_mode=query_mode,
         )
         state.update(skill.apply_guard(state, config=config))
         if state.get("intent") == "REJECT":

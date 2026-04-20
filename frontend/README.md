@@ -32,6 +32,7 @@
 - 当前线程
 - 当前活动运行
 - 运行步骤
+- 当前活动 Query State（`mode/op/domain/dimensions/filters/presentation`）
 - 最新 assistant 消息
 - 管理页 / 个人页状态
 
@@ -48,6 +49,23 @@
 5. UI 展示 `pending / running / cancelling / completed / failed / cancelled`
 
 运行面板和消息操作现在完全由后端 `Run` 状态驱动，而不是依赖旧页面壳层中的 DOM 事件拼装。
+
+## Query State 可视化（新增）
+
+在聊天运行区域中，前端会从最近一条带 `resolved_request` 的消息元数据提取状态并展示：
+
+- `mode`（standalone/refinement/ambiguous）
+- `query_op`（本轮操作类型与摘要）
+- `domain/domains`
+- `dimensions`
+- `filters`
+- `presentation`
+
+对应代码位置：
+
+- `src/view-models.ts`：`getActiveQueryState`
+- `src/components.tsx`：`QueryStatePanel`
+- `src/App.tsx`：在 `RunPanel` 下方挂载 `QueryStatePanel`
 
 ## 本地运行
 

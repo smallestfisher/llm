@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from abc import ABC
 from typing import Any
@@ -7,6 +8,10 @@ from typing import Any
 from app.semantic.domains import build_schema_excerpt
 from app.semantic.filters import apply_filter_refinement
 from app.execution.llm_client import llm_complete
+from app.execution.query_constraints import (
+    format_query_constraints_text,
+    resolve_query_shape_constraints,
+)
 from app.execution.sql_executor import choose_best_sql_candidate, execute_sql
 from app.execution.sql_guard import harden_sql, sanitize_sql
 from app.presentation.answer_builder import build_answer_payload
@@ -72,8 +77,10 @@ class BaseSkill(ABC):
         question: str,
         chat_history: list[str],
         decision: RouteDecision,
+        query_state: dict[str, Any] | None = None,
+        query_mode: str = "standalone_query",
     ) -> dict[str, Any]:
-        return self._initial_state(question, chat_history, decision)
+        return self._initial_state(question, chat_history, decision, query_state=query_state, query_mode=query_mode)
 
     def apply_guard(self, state: dict[str, Any], config: dict | None = None) -> dict[str, Any]:
         self._check_cancellation(config)
@@ -82,8 +89,10 @@ class BaseSkill(ABC):
                 domain_label=self.domain_label or self.domain,
                 guard_scope=self.guard_scope or (self.domain_label or self.domain),
                 question=state["question"],
+                query_state_json=self._query_state_json(state),
+                query_mode=str(state.get("query_mode") or "standalone_query"),
             ),
-            task="guard"
+            task="guard",
         )
         if "REJECT" in decision:
             return {"intent": "REJECT"}
@@ -92,11 +101,14 @@ class BaseSkill(ABC):
     def apply_refine_filters(self, state: dict[str, Any]) -> dict[str, Any]:
         question = state.get("normalized_question") or state["question"]
         intent = state.get("intent") or ""
+        base_filters = dict(state.get("query_state", {}).get("filters") or {})
+        base_filters.update(state.get("intent_filters") or {})
         refined_filters = apply_filter_refinement(
             question=question,
             intent=intent,
-            filters=state.get("intent_filters") or {},
+            filters=base_filters,
             allowed_tables=self._allowed_tables(),
+            query_state=state.get("query_state") or {},
         )
         return {"refined_filters": refined_filters}
 
@@ -114,6 +126,10 @@ class BaseSkill(ABC):
         history_list = state.get("chat_history", [])
         history_text = "\n".join(history_list) if history_list else ""
         effective_question = state.get("normalized_question") or state["question"]
+        query_constraints = resolve_query_shape_constraints(state.get("query_state"), self._allowed_tables())
+        state["query_constraints"] = query_constraints
+        constraints_text = format_query_constraints_text(query_constraints)
+
         prompt = build_text2sql_prompt(
             domain_label=self.domain_label or self.domain,
             focus_areas=self.focus_areas,
@@ -122,6 +138,8 @@ class BaseSkill(ABC):
             table_schema=state["table_schema"],
             question=f"【前情提要】\n{history_text}\n\n【当前用户问题】\n{effective_question}" if history_text else effective_question,
             structured_filters=state.get("refined_filters") or {},
+            query_state_json=self._query_state_json(state),
+            query_constraints_text=constraints_text,
         )
 
         strategy_hints = (
@@ -138,6 +156,7 @@ class BaseSkill(ABC):
                 question=effective_question,
                 domain=self.domain,
                 allowed_tables=allowed_tables,
+                query_state=state.get("query_state") or {},
             )
 
         sql_candidates: list[str] = [_normalize_sql(llm_complete(prompt, stream=True, task="sql"))]
@@ -147,6 +166,7 @@ class BaseSkill(ABC):
             domain=self.domain,
             structured_filters=filters,
             allowed_tables=allowed_tables,
+            query_state=state.get("query_state") or {},
         )
 
         if SQL_CANDIDATE_COUNT > 1 and self._should_expand_sql_candidates(ranking):
@@ -159,6 +179,7 @@ class BaseSkill(ABC):
                     domain=self.domain,
                     structured_filters=filters,
                     allowed_tables=allowed_tables,
+                    query_state=state.get("query_state") or {},
                 )
                 if not self._should_expand_sql_candidates(ranking):
                     break
@@ -190,10 +211,12 @@ class BaseSkill(ABC):
             domain=self.domain,
             structured_filters=state.get("refined_filters") or {},
             allowed_tables=self._allowed_tables(),
+            query_state=state.get("query_state") or {},
         )
 
     def apply_reflect_sql(self, state: dict[str, Any], config: dict | None = None) -> dict[str, Any]:
         self._check_cancellation(config)
+        constraints_text = format_query_constraints_text(state.get("query_constraints") or {})
         prompt = build_reflect_sql_prompt(
             domain_label=self.domain_label or self.domain,
             field_conventions=self.field_conventions,
@@ -203,6 +226,8 @@ class BaseSkill(ABC):
             sql_query=state["sql_query"],
             error_message=state["sql_error"],
             structured_filters=state.get("refined_filters") or {},
+            query_state_json=self._query_state_json(state),
+            query_constraints_text=constraints_text,
         )
         return {
             "sql_query": harden_sql(
@@ -211,6 +236,7 @@ class BaseSkill(ABC):
                 question=state.get("normalized_question") or state["question"],
                 domain=self.domain,
                 allowed_tables=self._allowed_tables(),
+                query_state=state.get("query_state") or {},
             ),
             "retry_count": (state.get("retry_count") or 0) + 1,
             "sql_error": "",
@@ -240,6 +266,8 @@ class BaseSkill(ABC):
             answer_prompt=build_answer_prompt(
                 domain_label=self.domain_label or self.domain,
                 answer_rules=self.answer_rules,
+                query_state_json=self._query_state_json(state),
+                query_constraints_text=format_query_constraints_text(state.get("query_constraints") or {}),
             ),
         )
 
@@ -289,21 +317,34 @@ class BaseSkill(ABC):
         question: str,
         chat_history: list[str],
         decision: RouteDecision,
+        *,
+        query_state: dict[str, Any] | None = None,
+        query_mode: str = "standalone_query",
     ) -> dict[str, Any]:
+        query_state = dict(query_state or {})
         normalized_question = (
-            decision.filters.get("_normalized_question")
-            if isinstance(decision.filters, dict)
-            else None
-        ) or question
+            query_state.get("query_text")
+            or (
+                decision.filters.get("_normalized_question")
+                if isinstance(decision.filters, dict)
+                else None
+            )
+            or question
+        )
+        merged_filters = dict(query_state.get("filters") or {})
+        merged_filters.update(dict(decision.filters or {}))
         return {
             "question": question,
             "chat_history": list(chat_history or []),
             "table_schema": "",
             "normalized_question": normalized_question,
             "lexicon_hits": [],
-            "intent": decision.intent or f"{self.domain}_query",
+            "intent": query_state.get("intent") or decision.intent or f"{self.domain}_query",
             "intent_confidence": decision.confidence,
-            "intent_filters": dict(decision.filters or {}),
+            "intent_filters": merged_filters,
+            "query_mode": query_mode,
+            "query_state": query_state,
+            "query_constraints": {},
             "refined_filters": {},
             "sql_query": "",
             "sql_candidates": [],
@@ -318,6 +359,12 @@ class BaseSkill(ABC):
             "row_count": None,
             "truncated": False,
         }
+
+    def _query_state_json(self, state: dict[str, Any]) -> str:
+        try:
+            return json.dumps(state.get("query_state") or {}, ensure_ascii=False, sort_keys=True)
+        except Exception:
+            return "{}"
 
     def _build_result(self, state: dict[str, Any]) -> SkillResult:
         return SkillResult(

@@ -767,3 +767,62 @@ textarea {
     gap: 0.5rem;
   }
 }
+
+.query-state-panel {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  overflow: hidden;
+}
+
+.query-state-summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.8rem 1rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--text-secondary);
+  background: #f5f6fa;
+  border-bottom: 1px solid var(--border-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.query-state-summary::-webkit-details-marker {
+  display: none;
+}
+
+.query-state-body {
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.95rem 1rem 1rem;
+}
+
+.query-state-section {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.query-state-grid {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.query-state-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 130px) 1fr;
+  gap: 0.75rem;
+  align-items: start;
+  font-size: 0.8rem;
+}
+
+.query-state-key {
+  color: var(--text-desc);
+  font-weight: 700;
+  font-family: monospace;
+}
+
+.query-state-value {
+  color: var(--text-secondary);
+  word-break: break-word;
+}

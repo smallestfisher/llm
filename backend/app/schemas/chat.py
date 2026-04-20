@@ -38,6 +38,7 @@ class MessageMetadataResponse(BaseModel):
     rows: list = []
     row_count: int | None = None
     truncated: bool = False
+    resolved_request: dict = {}
 
 
 class MessageResponse(BaseModel):

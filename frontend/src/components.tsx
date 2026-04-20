@@ -1,6 +1,6 @@
 import { useEffect, useRef, type FormEvent, type ReactNode } from 'react'
 import type { AdminMetricsHistoryResponse, AdminMetricsResponse, AuditRow, MessageRow, RunRow, ThreadDetail, ThreadSummary, UserRow } from './api'
-import { formatDisplayDate, getRunStatusLabel, getRunStatusTone, getRunStepLabel, type RunStepState } from './view-models'
+import { formatDisplayDate, getRunStatusLabel, getRunStatusTone, getRunStepLabel, type QueryStateView, type RunStepState } from './view-models'
 
 type ThreadListProps = {
   threads: ThreadSummary[]
@@ -69,6 +69,63 @@ function stepPrefix(state: RunStepState) {
     default:
       return ''
   }
+}
+
+
+function renderKeyValueRows(data: Record<string, unknown>) {
+  const entries = Object.entries(data || {})
+  if (!entries.length) return <span style={{ color: 'var(--text-desc)' }}>无</span>
+  return (
+    <div className="query-state-grid">
+      {entries.map(([key, value]) => (
+        <div key={key} className="query-state-row">
+          <span className="query-state-key">{key}</span>
+          <span className="query-state-value">{String(value)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function QueryStatePanel({ queryState }: { queryState: QueryStateView | null }) {
+  if (!queryState) return null
+
+  return (
+    <details className="query-state-panel" open>
+      <summary className="query-state-summary">Query State</summary>
+      <div className="query-state-body">
+        <div className="run-panel-summary">
+          {queryState.mode && <span className="status-pill status-pill--neutral">mode: {queryState.mode}</span>}
+          {queryState.operationType && <span className="status-pill status-pill--info">op: {queryState.operationType}</span>}
+          {queryState.domain && <span className="status-pill status-pill--success">domain: {queryState.domain}</span>}
+          {queryState.confidence !== null && <span className="status-pill status-pill--neutral">confidence: {queryState.confidence.toFixed(2)}</span>}
+        </div>
+        {queryState.operationSummary && <div className="run-panel-detail">{queryState.operationSummary}</div>}
+        {queryState.queryText && (
+          <div className="run-panel-detail">
+            <strong>Resolved Query</strong>
+            <div style={{ marginTop: '0.4rem' }}>{queryState.queryText}</div>
+          </div>
+        )}
+        <div className="query-state-section">
+          <strong>Dimensions</strong>
+          <div className="run-panel-summary" style={{ marginTop: '0.35rem' }}>
+            {(queryState.dimensions || []).length
+              ? queryState.dimensions.map((item) => <span key={item} className="status-pill status-pill--neutral">{item}</span>)
+              : <span style={{ color: 'var(--text-desc)' }}>无</span>}
+          </div>
+        </div>
+        <div className="query-state-section">
+          <strong>Filters</strong>
+          <div style={{ marginTop: '0.35rem' }}>{renderKeyValueRows(queryState.filters || {})}</div>
+        </div>
+        <div className="query-state-section">
+          <strong>Presentation</strong>
+          <div style={{ marginTop: '0.35rem' }}>{renderKeyValueRows(queryState.presentation || {})}</div>
+        </div>
+      </div>
+    </details>
+  )
 }
 
 export function RunPanel({ activeRun, activeRunDetail, runSteps }: RunPanelProps) {

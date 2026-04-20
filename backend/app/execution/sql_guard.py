@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from app.semantic.schema_registry import load_tables
+from app.execution.query_constraints import resolve_query_shape_constraints
 
 
 _TABLES = load_tables()
@@ -170,6 +171,7 @@ def lint_sql(
     domain: str = "",
     structured_filters: dict[str, Any] | None = None,
     allowed_tables: list[str] | None = None,
+    query_state: dict[str, Any] | None = None,
 ) -> list[str]:
     issues: list[str] = []
     normalized_sql = (sql or "").strip()
@@ -213,6 +215,27 @@ def lint_sql(
     if re.search(r"(?is)'(?:your_[^']+|example[^']*|sample[^']*)'", normalized_sql):
         issues.append("SQL 包含占位或示例字面值，请改为真实过滤条件或删除该条件")
 
+    shape = resolve_query_shape_constraints(query_state, allowed_tables)
+    required_columns = list(shape.get("required_columns") or [])
+    if required_columns:
+        missing = [column for column in required_columns if not _sql_mentions_any(normalized_sql, (column,))]
+        if missing:
+            issues.append(f"SQL 缺少查询状态要求的字段: {', '.join(missing)}")
+
+    require_aggregate = bool(shape.get("require_aggregate"))
+    forbid_aggregate = bool(shape.get("forbid_aggregate"))
+    require_group_by_columns = list(shape.get("require_group_by_columns") or [])
+    has_aggregate = any(token in lower_sql for token in ("count(", "sum(", "avg(", "min(", "max("))
+    has_group_by = " group by " in f" {lower_sql} "
+    if require_aggregate and not (has_aggregate or has_group_by):
+        issues.append("当前查询状态要求 summary 结果，SQL 必须包含聚合或分组")
+    if forbid_aggregate and has_aggregate:
+        issues.append("当前查询状态要求 detail 结果，SQL 不应包含聚合函数")
+    if require_group_by_columns and has_group_by:
+        missing_group_by = [column for column in require_group_by_columns if not re.search(rf"(?is)group\s+by[^;]*\b{re.escape(column)}\b", normalized_sql)]
+        if missing_group_by:
+            issues.append(f"GROUP BY 缺少查询状态要求的维度字段: {', '.join(missing_group_by)}")
+
     if allowed_tables:
         referenced_tables = set(
             match.group(1)
@@ -232,6 +255,7 @@ def harden_sql(
     question: str = "",
     domain: str = "",
     allowed_tables: list[str] | None = None,
+    query_state: dict[str, Any] | None = None,
 ) -> str:
     hardened = (sql or "").strip()
     if not hardened:

@@ -16,7 +16,9 @@
 - 线程、消息、运行状态、重新生成、停止运行
 - 审计日志
 - 5 个技能的单域问答与跨域问答
-- SQL 执行前硬化与 lint
+- 会话状态机（`QueryOp -> QueryState`）驱动追问 / 新问题切换
+- SQL 执行前硬化、字段约束与查询形态约束（summary/detail）
+- 前端 Query State 可视化（当前操作、维度、过滤、展示约束）
 
 ## 当前 5 个技能
 
@@ -65,6 +67,15 @@
 3. `backend/app/services/*` 维护 `Thread / Turn / Run / Message / AuditLog`
 4. `backend/app/workflow/executor.py` 驱动 `backend/app/workflow/orchestrator.py`
 5. `backend/app/workflow/*`、`backend/app/semantic/*`、`backend/app/execution/*`、`backend/app/config/*` 负责领域路由、跨域编排、SQL 运行时以及表结构 / 路由配置；其中表结构唯一事实来源为 `backend/app/config/tables.json`
+
+新增状态机主链路：
+
+1. `backend/app/services/conversation_resolver.py` 解析当前输入并生成结构化 `query_op/query_state`
+2. `backend/app/services/query_state_reducer.py` 以程序化方式将上一轮状态演进到下一轮状态
+3. `backend/app/workflow/router.py::route_question_for_state` 优先使用 `QueryState` 的域信息路由
+4. `backend/app/execution/query_constraints.py` 从 `QueryState` 生成 SQL 字段与查询形态约束
+5. `backend/app/execution/sql_guard.py` 对 SQL 进行字段必需项与形态一致性校验
+6. 前端 `frontend/src/view-models.ts` 从消息元数据提取 `resolved_request` 并在 `QueryStatePanel` 展示
 
 说明：
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -11,11 +12,12 @@ from app.logging_config import get_logger
 from app.models import Run, Thread, Turn, utcnow
 from app.services.cache_service import query_cache_service
 from app.services.chat_service import ChatService
+from app.services.conversation_resolver import ConversationResolver
 from app.services.metrics_service import metrics_service
 from app.services.thread_event_publisher import thread_event_publisher
 from app.services.run_service import ACTIVE_RUN_STATUSES, RunService
 from app.workflow.executor import execute_chat_workflow
-from app.workflow.router import route_question
+from app.workflow.router import route_question_for_state
 from app.workflow.state import CancelledError, RouteDecision
 
 logger = get_logger(__name__)
@@ -27,9 +29,10 @@ class ChatExecutionService:
     def __init__(self) -> None:
         self.chat_service = ChatService()
         self.run_service = RunService()
+        self.conversation_resolver = ConversationResolver()
 
-    def _workflow_result_to_metadata(self, result: dict, route_snapshot: dict) -> dict:
-        return {
+    def _workflow_result_to_metadata(self, result: dict, route_snapshot: dict, resolved_request: dict[str, Any] | None = None) -> dict:
+        metadata = {
             "route": route_snapshot,
             "route_reason": result.get("route_reason", route_snapshot.get("reason", "")),
             "active_skill": result.get("active_skill") or result.get("skill_name") or "",
@@ -41,6 +44,9 @@ class ChatExecutionService:
             "truncated": bool(result.get("truncated")),
             "cache_hit": bool(result.get("cache_hit")),
         }
+        if resolved_request:
+            metadata["resolved_request"] = dict(resolved_request)
+        return metadata
 
     def _build_route_snapshot(self, decision: RouteDecision) -> dict:
         return {
@@ -91,8 +97,37 @@ class ChatExecutionService:
         db.commit()
         self._publish_thread(thread.id, event=node)
 
+    def _resolve_request_for_thread(self, db: Session, thread: Thread, question: str) -> dict[str, Any]:
+        messages = self.run_service.repo.list_messages_for_thread(db, thread.id)
+        return self.conversation_resolver.resolve(question=question, messages=messages)
+
+    def _update_resolved_route(self, resolved_request: dict[str, Any] | None, route: str) -> dict[str, Any] | None:
+        if not resolved_request:
+            return None
+        updated = dict(resolved_request)
+        updated["resolved_route"] = route or updated.get("resolved_route") or updated.get("route_hint") or ""
+        return updated
+
+    def _user_message_metadata(self, resolved_request: dict[str, Any] | None = None) -> dict[str, Any]:
+        metadata: dict[str, Any] = {}
+        if resolved_request:
+            metadata["resolved_request"] = dict(resolved_request)
+        return metadata
+
+    def _load_turn_request(self, db: Session, thread: Thread, turn: Turn, question: str) -> dict[str, Any]:
+        metadata = getattr(turn.user_message, "metadata_dict", {}) or {}
+        resolved_request = metadata.get("resolved_request") if isinstance(metadata, dict) else None
+        if isinstance(resolved_request, dict) and resolved_request.get("resolved_question"):
+            return dict(resolved_request)
+        recomputed = self._resolve_request_for_thread(db, thread, question)
+        if turn.user_message:
+            self.run_service.update_message_metadata(db, turn.user_message, self._user_message_metadata(recomputed))
+        return recomputed
+
     def execute_initial_turn(self, db: Session, thread: Thread, question: str) -> dict:
         turn, user_message, run = self.run_service.start_initial_run(db, thread, question)
+        resolved_request = self._resolve_request_for_thread(db, thread, question)
+        self.run_service.update_message_metadata(db, user_message, self._user_message_metadata(resolved_request))
         db.flush()
         return {
             "turn_id": turn.id,
@@ -131,6 +166,12 @@ class ChatExecutionService:
                 return
             if question is None:
                 question = turn.user_message.content if turn.user_message else ""
+            resolved_request = self._load_turn_request(db, thread, turn, question)
+            query_state = dict(resolved_request.get("query_state") or {})
+            query_mode = str(resolved_request.get("mode") or "standalone_query")
+            effective_question = str(query_state.get("query_text") or resolved_request.get("resolved_question") or question or "").strip()
+            if not effective_question:
+                effective_question = question or ""
             if self.run_service.is_cancel_requested(run):
                 self.run_service.cancel_run(db, run, turn)
                 thread.updated_at = utcnow()
@@ -144,13 +185,17 @@ class ChatExecutionService:
             self._publish_thread(thread.id, event="run_started")
             metrics_service.mark_run_started(run.public_id)
             history = self.chat_service.build_thread_history(db, thread)
-            initial_decision = route_question(question)
+            initial_decision = route_question_for_state(effective_question, query_state)
+            resolved_request = self._update_resolved_route(resolved_request, initial_decision.route) or resolved_request
+            if turn.user_message:
+                self.run_service.update_message_metadata(db, turn.user_message, self._user_message_metadata(resolved_request))
+                db.commit()
             metrics_service.mark_run_route(run.public_id, initial_decision.route)
             route_snapshot = self._build_route_snapshot(initial_decision)
             bypass_cache = REGENERATE_BYPASS_CACHE and run.kind == "regenerate"
             cache_key = ""
             if not bypass_cache:
-                cache_key = query_cache_service.build_key(question=question, decision=initial_decision)
+                cache_key = query_cache_service.build_key(question=effective_question, decision=initial_decision)
                 cached_result = query_cache_service.get(cache_key)
                 if cached_result:
                     metrics_service.record_cache_hit()
@@ -166,8 +211,8 @@ class ChatExecutionService:
                     )
                     thread.updated_at = utcnow()
                     db.commit()
-                    metadata = self._workflow_result_to_metadata(cached_result, route_snapshot)
-                    answer = cached_result.get("final_answer") or f"[rewrite] 未生成最终回答：{question}"
+                    metadata = self._workflow_result_to_metadata(cached_result, route_snapshot, resolved_request)
+                    answer = cached_result.get("final_answer") or f"[rewrite] 未生成最终回答：{effective_question}"
                     self.run_service.complete_run(db, run, turn, answer, metadata)
                     thread.updated_at = utcnow()
                     db.commit()
@@ -181,8 +226,8 @@ class ChatExecutionService:
             def is_cancelled() -> bool:
                 check_db = SessionLocal()
                 try:
-                    r = check_db.query(Run).filter(Run.public_id == run_id).first()
-                    return self.run_service.is_cancel_requested(r) if r else False
+                    queued_run = check_db.query(Run).filter(Run.public_id == run_id).first()
+                    return self.run_service.is_cancel_requested(queued_run) if queued_run else False
                 finally:
                     check_db.close()
 
@@ -199,9 +244,11 @@ class ChatExecutionService:
 
             workflow_result = asyncio.run(
                 execute_chat_workflow(
-                    question,
+                    effective_question,
                     history,
                     initial_decision=initial_decision,
+                    query_state=query_state,
+                    query_mode=query_mode,
                     is_cancelled=is_cancelled,
                     on_event=on_event,
                 )
@@ -239,8 +286,12 @@ class ChatExecutionService:
                         value=self._cacheable_result(workflow_result),
                         route=initial_decision.route,
                     )
-                metadata = self._workflow_result_to_metadata(workflow_result, route_snapshot)
-                answer = workflow_result.get("final_answer") or f"[rewrite] 未生成最终回答：{question}"
+                resolved_request = self._update_resolved_route(
+                    resolved_request,
+                    workflow_result.get("route") or initial_decision.route,
+                ) or resolved_request
+                metadata = self._workflow_result_to_metadata(workflow_result, route_snapshot, resolved_request)
+                answer = workflow_result.get("final_answer") or f"[rewrite] 未生成最终回答：{effective_question}"
                 self.run_service.complete_run(db, run, turn, answer, metadata)
                 metrics_service.mark_run_finished(
                     run.public_id,

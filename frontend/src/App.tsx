@@ -25,8 +25,8 @@ import {
   type ThreadSummary,
   type UserRow,
 } from './api'
-import { AdminMetricsPanel, AdminUsersPanel, AuditPanel, ChatPanel, MessageCard, ProfilePanel, RunPanel, ThreadList } from './components'
-import { formatDisplayDate, getActiveRun, getActiveRunDetail, getHasRunningRun, getLatestAssistantMessageIds, getRunSteps, isRegeneratableMessage } from './view-models'
+import { AdminMetricsPanel, AdminUsersPanel, AuditPanel, ChatPanel, MessageCard, ProfilePanel, QueryStatePanel, RunPanel, ThreadList } from './components'
+import { formatDisplayDate, getActiveQueryState, getActiveRun, getActiveRunDetail, getHasRunningRun, getLatestAssistantMessageIds, getRunSteps, isRegeneratableMessage } from './view-models'
 
 const QUICK_SUGGESTIONS = [
   '查看 A1 产线昨天的平均良率',
@@ -221,6 +221,7 @@ export function App() {
 
   const isAdmin = useMemo(() => isAdminSession(session), [session])
   const activeRun = useMemo(() => getActiveRun(activeThread), [activeThread])
+  const activeQueryState = useMemo(() => getActiveQueryState(activeThread), [activeThread])
   const runSteps = useMemo(() => getRunSteps(activeRun), [activeRun])
   const latestAssistantMessages = useMemo(() => getLatestAssistantMessageIds(activeThread), [activeThread])
   const activeRunDetail = useMemo(() => getActiveRunDetail(activeRun), [activeRun])
@@ -800,6 +801,7 @@ export function App() {
                   activeRunDetail={activeRunDetail}
                   runSteps={runSteps}
                 />
+                <QueryStatePanel queryState={activeQueryState} />
               </div>
             )}
             renderComposerHint={composerHint}

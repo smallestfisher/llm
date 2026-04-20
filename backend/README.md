@@ -27,6 +27,32 @@
 - `app/config`：表结构与路由配置
 - `app/presentation`：最终答案载荷整理
 
+## 会话状态机（核心新增）
+
+当前后端不再把每一轮输入都当成孤立文本，而是维护可演进的查询状态：
+
+- `app/services/conversation_resolver.py`
+  - 产出 `resolved_request`（含 `mode/query_op/query_state`）
+- `app/services/query_state_reducer.py`
+  - 以显式操作类型演进状态（例如 `new_query`、`switch_domain`、`add_dimensions`、`set_filters`、`set_presentation`）
+- `app/services/chat_execution_service.py`
+  - 将 `resolved_request` 持久化到消息元数据，并在执行链路中使用
+
+这样可稳定区分“新问题”与“补充说明”，而不是依赖关键词补丁。
+
+## SQL 约束闭环（核心新增）
+
+`QueryState` 会被下沉为 SQL 约束并在执行前硬校验：
+
+- `app/execution/query_constraints.py`
+  - 生成字段约束与查询形态约束（`required_columns`、`detail_level`、聚合/分组要求）
+- `app/execution/sql_guard.py`
+  - lint 直接校验约束，不满足即失败
+- `app/execution/sql_executor.py`
+  - 候选 SQL 排序与执行时统一应用约束
+- `app/skills/base.py`
+  - guard / SQL 生成 / 反思 / answer 全链路注入 `query_state` 与约束上下文
+
 ## 运行时模型
 
 后端把下面这些对象当作一等对象处理：
@@ -67,6 +93,8 @@
 - `execute_sql`
 - `reflect_sql`
 - 最终答案生成
+
+运行中还会携带 `resolved_request` 元数据（包含 `query_op/query_state`），供前端调试面板可视化展示。
 
 ## 本地运行
 

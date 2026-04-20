@@ -79,8 +79,10 @@ def apply_filter_refinement(
     intent: str,
     filters: dict[str, Any],
     allowed_tables: list[str] | None = None,
+    query_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    refined_filters = dict(filters or {})
+    refined_filters = dict((query_state or {}).get('filters') or {})
+    refined_filters.update(dict(filters or {}))
     recent_days = extract_recent_days(question)
     if recent_days and not has_explicit_date(question):
         refined_filters.pop("date_from", None)

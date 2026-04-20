@@ -34,6 +34,12 @@ class RunService:
         db.flush()
         return turn, user_message, run
 
+    def update_message_metadata(self, db: Session, message: Message | None, metadata: dict | None = None) -> None:
+        if not message:
+            return
+        message.metadata_json = json.dumps(metadata or {}, ensure_ascii=False)
+        db.flush()
+
     def start_regenerate_run(self, db: Session, thread: Thread, assistant_message_id: int) -> tuple[Turn, Run] | None:
         messages = self.repo.list_messages_for_thread(db, thread.id)
         target = next((m for m in messages if m.id == assistant_message_id and m.role == 'assistant'), None)
