@@ -42,10 +42,11 @@ def llm_complete(prompt: str, stream: bool = False, *, task: str = "default") ->
     prompt_hash = sha1(prompt.encode("utf-8")).hexdigest()[:10]
     start = time.perf_counter()
     logger.info(
-        "llm_request task={} model={} stream={} prompt_chars={} prompt_hash={}",
+        "llm_request task={} model={} stream={} prompt={} prompt_chars={} prompt_hash={}",
         task,
         model,
         stream,
+        prompt,
         len(prompt),
         prompt_hash,
     )

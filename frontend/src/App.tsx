@@ -25,8 +25,8 @@ import {
   type ThreadSummary,
   type UserRow,
 } from './api'
-import { AdminMetricsPanel, AdminUsersPanel, AuditPanel, ChatPanel, MessageCard, ProfilePanel, QueryStatePanel, RunPanel, ThreadList } from './components'
-import { formatDisplayDate, getActiveQueryState, getActiveRun, getActiveRunDetail, getHasRunningRun, getLatestAssistantMessageIds, getRunSteps, isRegeneratableMessage } from './view-models'
+import { AdminMetricsPanel, AdminUsersPanel, AuditPanel, ChatPanel, MessageCard, ProfilePanel, RunPanel, ThreadList } from './components'
+import { formatDisplayDate, getActiveRun, getActiveRunDetail, getHasRunningRun, getLatestAssistantMessageIds, getRunSteps, isRegeneratableMessage } from './view-models'
 
 const QUICK_SUGGESTIONS = [
   '查看 A1 产线昨天的平均良率',
@@ -53,6 +53,25 @@ type Session = {
 }
 
 type View = 'chat' | 'profile' | 'admin-users' | 'admin-audits' | 'admin-metrics'
+
+type PendingOutgoingMessage = {
+  content: string
+  baselineUserMessageCount: number
+}
+
+function getUserMessageCount(thread: ThreadDetail | null): number {
+  return (thread?.messages || []).filter((message) => message.role === 'user').length
+}
+
+function threadHasCommittedPendingMessage(thread: ThreadDetail | null, pendingOutgoingMessage: PendingOutgoingMessage | null): boolean {
+  if (!thread || !pendingOutgoingMessage?.content.trim()) return false
+  const userMessages = [...(thread.messages || [])].filter((message) => message.role === 'user')
+  if (userMessages.length <= pendingOutgoingMessage.baselineUserMessageCount) {
+    return false
+  }
+  const latestUserMessage = userMessages[userMessages.length - 1]
+  return Boolean(latestUserMessage && latestUserMessage.content.trim() === pendingOutgoingMessage.content.trim())
+}
 
 function getSessionStorageKey() {
   return 'boe-rewrite-session'
@@ -163,6 +182,8 @@ function renderTimeline(
   hasResolvedThread: boolean,
   latestAssistantMessages: Set<number>,
   busy: boolean,
+  showThinking: boolean,
+  pendingOutgoingMessage: string,
   canViewSqlDebug: boolean,
   onRegenerate: (messageId: number) => void,
   onPickQuickSuggestion: (value: string) => void,
@@ -172,6 +193,9 @@ function renderTimeline(
   }
   const messages = activeThread?.messages ?? []
   if (!messages.length) {
+    if (busy || showThinking || pendingOutgoingMessage) {
+      return null
+    }
     return renderEmptyThread(onPickQuickSuggestion)
   }
   return (
@@ -200,6 +224,7 @@ export function App() {
   const [activeThreadId, setActiveThreadId] = useState('')
   const [activeThread, setActiveThread] = useState<ThreadDetail | null>(null)
   const [question, setQuestion] = useState('')
+  const [pendingOutgoingMessage, setPendingOutgoingMessage] = useState<PendingOutgoingMessage | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [isBootstrappingSession, setIsBootstrappingSession] = useState(false)
@@ -220,17 +245,31 @@ export function App() {
   const threadListRequestIdRef = useRef(0)
 
   const isAdmin = useMemo(() => isAdminSession(session), [session])
+  const shouldRenderPendingOutgoingMessage = useMemo(
+    () => Boolean(pendingOutgoingMessage && !threadHasCommittedPendingMessage(activeThread, pendingOutgoingMessage)),
+    [activeThread, pendingOutgoingMessage],
+  )
   const activeRun = useMemo(() => getActiveRun(activeThread), [activeThread])
-  const activeQueryState = useMemo(() => getActiveQueryState(activeThread), [activeThread])
-  const runSteps = useMemo(() => getRunSteps(activeRun), [activeRun])
+  const activeRunForDisplay = useMemo(() => {
+    if (!activeRun) return null
+    if (shouldRenderPendingOutgoingMessage && ['completed', 'failed', 'cancelled'].includes(activeRun.status)) {
+      return null
+    }
+    return activeRun
+  }, [activeRun, shouldRenderPendingOutgoingMessage])
+  const runSteps = useMemo(() => getRunSteps(activeRunForDisplay), [activeRunForDisplay])
   const latestAssistantMessages = useMemo(() => getLatestAssistantMessageIds(activeThread), [activeThread])
-  const activeRunDetail = useMemo(() => getActiveRunDetail(activeRun), [activeRun])
+  const activeRunDetail = useMemo(() => getActiveRunDetail(activeRunForDisplay), [activeRunForDisplay])
   const hasRunningRun = useMemo(() => getHasRunningRun(activeRun), [activeRun])
   const canViewSqlDebug = useMemo(() => Boolean(isAdmin && SQL_DEBUG_UI_ENABLED), [isAdmin])
   const activeThreadTitle = activeThread?.title || '新对话'
-  const hasResolvedThread = !isBootstrappingSession && Boolean(activeThreadId ? activeThread : threads.length === 0)
-  const canSend = Boolean(!busy && !runBusy && session?.token && question.trim())
   const isChatLoading = runBusy || isPolling || hasRunningRun
+  const hasResolvedThread = !isBootstrappingSession && Boolean(
+    activeThreadId
+      ? (activeThread || shouldRenderPendingOutgoingMessage || isChatLoading)
+      : (threads.length === 0 || shouldRenderPendingOutgoingMessage || isChatLoading),
+  )
+  const canSend = Boolean(!busy && !runBusy && session?.token && question.trim())
   const composerHint = hasRunningRun ? '任务运行中，您可以选择停止运行。' : '输入业务数据查询问题...'
 
   useEffect(() => {
@@ -333,6 +372,9 @@ export function App() {
       return detail
     }
     setActiveThread(detail)
+    if (threadHasCommittedPendingMessage(detail, pendingOutgoingMessage)) {
+      setPendingOutgoingMessage(null)
+    }
     if (!getHasRunningRun(getActiveRun(detail))) {
       stopPolling()
       setRunBusy(false)
@@ -356,6 +398,7 @@ export function App() {
       activeThreadIdRef.current = ''
       setActiveThreadId('')
       setActiveThread(null)
+      setPendingOutgoingMessage(null)
       return
     }
     activeThreadIdRef.current = nextThreadId
@@ -483,6 +526,12 @@ export function App() {
     setBusy(true)
     setError('')
     try {
+      setQuestion('')
+      setPendingOutgoingMessage({
+        content: nextQuestion,
+        baselineUserMessageCount: getUserMessageCount(activeThread),
+      })
+      setRunBusy(true)
       let targetThreadId = activeThreadId
       if (!targetThreadId) {
         const created = await createThread(session.token)
@@ -492,12 +541,11 @@ export function App() {
       }
 
       await sendMessage(session.token, targetThreadId, nextQuestion)
-      setQuestion('')
-      setRunBusy(true)
       await refreshThreadDetail(session.token, targetThreadId)
       await refreshThreads(session.token, targetThreadId)
     } catch (err) {
       setRunBusy(false)
+      setPendingOutgoingMessage(null)
       setError(err instanceof Error ? err.message : '发送失败')
     } finally {
       setBusy(false)
@@ -511,6 +559,7 @@ export function App() {
     try {
       await regenerateMessage(session.token, activeThreadId, messageId)
       setRunBusy(true)
+      setPendingOutgoingMessage(null)
       await refreshThreadDetail(session.token, activeThreadId)
       await refreshThreads(session.token, activeThreadId)
     } catch (err) {
@@ -603,21 +652,25 @@ export function App() {
     setBusy(true)
     setError('')
     try {
+      setQuestion('')
+      setPendingOutgoingMessage({
+        content: text,
+        baselineUserMessageCount: getUserMessageCount(activeThread),
+      })
+      setRunBusy(true)
       let targetThreadId = activeThreadId
       if (!targetThreadId) {
         const created = await createThread(session.token)
         targetThreadId = created.public_id
         activeThreadIdRef.current = targetThreadId
         setActiveThreadId(targetThreadId)
-        await refreshThreads(session.token, targetThreadId)
       }
       await sendMessage(session.token, targetThreadId, text)
-      setQuestion('')
-      setRunBusy(true)
       await refreshThreadDetail(session.token, targetThreadId)
       await refreshThreads(session.token, targetThreadId)
     } catch (err) {
       setRunBusy(false)
+      setPendingOutgoingMessage(null)
       setError(err instanceof Error ? err.message : '快捷发送失败')
     } finally {
       setBusy(false)
@@ -630,6 +683,7 @@ export function App() {
     threadListRequestIdRef.current += 1
     activeThreadIdRef.current = ''
     setRunBusy(false)
+    setPendingOutgoingMessage(null)
     setSession(null)
     setThreads([])
     setActiveThreadId('')
@@ -791,17 +845,17 @@ export function App() {
             activeThread={activeThread}
             busy={busy || isChatLoading}
             showThinking={isChatLoading}
+            pendingOutgoingMessage={shouldRenderPendingOutgoingMessage ? (pendingOutgoingMessage?.content || '') : ''}
             hasRunningRun={hasRunningRun}
-            activeRun={activeRun}
-            renderMainTimeline={() => renderTimeline(activeThread, hasResolvedThread, latestAssistantMessages, busy || runBusy, canViewSqlDebug, handleRegenerate, handlePickQuickSuggestion)}
+            activeRun={activeRunForDisplay}
+            renderMainTimeline={() => renderTimeline(activeThread, hasResolvedThread, latestAssistantMessages, busy || runBusy, isChatLoading, shouldRenderPendingOutgoingMessage ? (pendingOutgoingMessage?.content || '') : '', canViewSqlDebug, handleRegenerate, handlePickQuickSuggestion)}
             renderRunInspector={() => (
               <div style={{ maxWidth: '800px', margin: '0 auto 1.5rem', width: '100%' }}>
                 <RunPanel
-                  activeRun={activeRun}
+                  activeRun={activeRunForDisplay}
                   activeRunDetail={activeRunDetail}
                   runSteps={runSteps}
                 />
-                <QueryStatePanel queryState={activeQueryState} />
               </div>
             )}
             renderComposerHint={composerHint}

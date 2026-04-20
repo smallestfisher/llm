@@ -7,7 +7,7 @@ DB_CONFIG = {
     "host": os.getenv("MYSQL_HOST", "172.17.0.2"),
     "port": int(os.getenv("MYSQL_PORT", "3306")),
     "user": os.getenv("MYSQL_USER", "root"),
-    "password": os.getenv("MYSQL_PASSWORD", "021598"),
+    "password": os.getenv("MYSQL_PASSWORD", "021598Yy."),
     "charset": "utf8mb4",
     "autocommit": False,
 }

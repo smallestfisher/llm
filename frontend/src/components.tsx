@@ -161,6 +161,7 @@ type ChatPanelProps = {
   activeThread: ThreadDetail | null
   busy: boolean
   showThinking: boolean
+  pendingOutgoingMessage: string
   hasRunningRun: boolean
   activeRun: RunRow | null
   renderMainTimeline: () => ReactNode
@@ -178,6 +179,7 @@ export function ChatPanel({
   activeThread,
   busy,
   showThinking,
+  pendingOutgoingMessage,
   hasRunningRun,
   activeRun,
   renderMainTimeline,
@@ -190,7 +192,7 @@ export function ChatPanel({
   canSend,
 }: ChatPanelProps) {
   const messageListRef = useRef<HTMLDivElement | null>(null)
-  const isEmptyState = !showThinking && !(activeThread?.messages?.length)
+  const isEmptyState = !showThinking && !pendingOutgoingMessage && !(activeThread?.messages?.length)
   const headerStatusLabel = activeRun ? getRunStatusLabel(activeRun.status) : ''
   const headerStatusTone = activeRun ? getRunStatusTone(activeRun.status) : 'neutral'
   const headerStepLabel = activeRun ? getRunStepLabel(activeRun.current_step) : ''
@@ -230,6 +232,16 @@ export function ChatPanel({
       ) : (
         <div ref={messageListRef} className="message-list">
           {renderMainTimeline()}
+          {pendingOutgoingMessage && (
+            <article className="message-card user">
+              <div className="avatar">U</div>
+              <div className="message-content">
+                <div className="message-bubble">
+                  {pendingOutgoingMessage}
+                </div>
+              </div>
+            </article>
+          )}
           {renderRunInspector()}
           {showThinking && (
             <div style={{ padding: '2rem', textAlign: 'center' }}>

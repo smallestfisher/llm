@@ -20,6 +20,11 @@ class FilterExtractorTestCase(unittest.TestCase):
         self.assertEqual(filters.get("PM_VERSION"), "2026W03")
         self.assertEqual(filters.get("factory"), "B4_BJ")
 
+    def test_extract_compact_month_and_full_pm_version(self):
+        filters = extract_shared_filters("最新四版需求，202604月P版需求最大的FGCODE是哪个，版本202604W1P1")
+        self.assertEqual(filters.get("month"), "2026-04")
+        self.assertEqual(filters.get("PM_VERSION"), "202604W1P1")
+
     def test_extract_relative_month_and_week(self):
         filters = extract_shared_filters("看下本月销量和下周排产")
         self.assertEqual(filters.get("relative_month"), "current_month")

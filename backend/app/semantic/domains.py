@@ -60,6 +60,11 @@ def build_schema_excerpt(table_names: list[str]) -> str:
         description = info.get("description")
         if description:
             lines.append(f"Description: {description}")
+
+        business_rules = info.get("business_rules") or []
+        if business_rules:
+            lines.append("business_rules: " + ",".join(business_rules))
+            
         columns = info.get("columns") or []
         if columns:
             lines.append("Columns: " + ", ".join(columns))

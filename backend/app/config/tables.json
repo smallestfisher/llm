@@ -1,22 +1,26 @@
 {
   "v_demand": {
-    "description": "V版生产需求表(Vendor/Customer Demand)，记录原始市场预测。时间粒度为月、每周一版。横向表。",
+    "description": "V版市场滚动需求预测表。记录原始市场预测数据,按月为时间粒度,每周发布一版.该表为横向宽表结构,核心数据为从起始月开始的连续7个月(当月及未来6个月)的滚动需求数量",
+    "business_rules": [
+      "横向表结构:从MONTH到MONTH7,代表基于起始月的连续7个月的滚动预测时序(M+0至M+6)",
+      "版本迭代规则:每周发布一版,PM_VERSION隐含了预测的基准时间线"
+    ],
     "columns": [
       "id",
-      "PM_VERSION (版本号)",
-      "FGCODE (生产需求号)",
-      "SBU_DESC (SBU描述)",
-      "CUSTOMER (客户)",
-      "MONTH (需求起始月份)",
-      "REQUIREMENT_QTY (需求起始月份 需求数量)",
-      "NEXT_REQUIREMENT (需求起始月份第2个月 需求数量)",
-      "LAST_REQUIREMENT (需求起始月份第3个月 需求数量)",
-      "MONTH4 (需求起始月份第4个月 需求数量)",
-      "MONTH5 (需求起始月份第5个月 需求数量)",
-      "MONTH6 (需求起始月份第6个月 需求数量)",
-      "MONTH7 (需求起始月份第7个月 需求数量)"
+      "PM_VERSION (预测版本号，格式为'YYYYMMWnVn',如202604W1V1表示2026年4月第1周的第1版预测,可用于推断预测发布的时间)",
+      "FGCODE (成品/产品编码)",
+      "SBU_DESC (战略业务单元描述)",
+      "CUSTOMER (客户名称)",
+      "MONTH (需求起始月份/基准月,即当月M+0)",
+      "REQUIREMENT_QTY (起始月M+0的需求数量)",
+      "NEXT_REQUIREMENT (次月M+1的需求数量)",
+      "LAST_REQUIREMENT (第3个月M+2的需求数量)",
+      "MONTH4 (第4个月M+3的需求数量)",
+      "MONTH5 (第5个月M+4的需求数量)",
+      "MONTH6 (第6个月M+5的需求数量)",
+      "MONTH7 (第7个月M+6的需求数量)"
     ],
-    "MAIN_KEY": "PM_VERSION,FGCODE,SBU_DESC,CUSTOMER",
+    "MAIN_KEY": "PM_VERSION, FGCODE, SBU_DESC, CUSTOMER (逻辑含义：特定版本下，特定客户在特定业务单元对特定产品的需求预测)",
     "month_col": "MONTH",
     "version_col": "PM_VERSION",
     "relationships": {
@@ -24,24 +28,28 @@
     }
   },
   "p_demand": {
-    "description": "P版生产需求表(Production Demand)，对应工厂端的需求产出数量。时间粒度为月、每周一版。横向表。",
+    "description": "P版生产需求表。记录工厂端的生产产出需求数据,按月为时间粒度,每周发布一版。该表为横向宽表结构,核心数据为从起始月开始的连续7个月(当月及未来6个月)的滚动生产需求数量",
+    "business_rules": [
+      "横向表结构:从MONTH到MONTH7,代表基于起始月的连续7个月的滚动生产需求时序(M+0至M+6)",
+      "版本迭代规则:每周发布一版,PM_VERSION隐含了预测的基准时间线"
+    ],
     "columns": [
       "id",
-      "PM_VERSION (版本号)",
-      "FGCODE (生产需求号)",
-      "SBU_DESC (SBU描述)",
-      "BU_DESC (BU描述)",
-      "CUSTOMER (客户)",
-      "MONTH (需求起始月份)",
-      "REQUIREMENT_QTY (需求起始月份 需求数量)",
-      "NEXT_REQUIREMENT (需求起始月份第2个月 需求数量)",
-      "LAST_REQUIREMENT (需求起始月份第3个月 需求数量)",
-      "MONTH4 (需求起始月份第4个月 需求数量)",
-      "MONTH5 (需求起始月份第5个月 需求数量)",
-      "MONTH6 (需求起始月份第6个月 需求数量)",
-      "MONTH7 (需求起始月份第7个月 需求数量)"
+      "PM_VERSION (预测版本号,格式为'YYYYMMWnPn',如202604W1P1表示2026年4月第1周的第1版预测,可用于推断预测发布的时间)",
+      "FGCODE (生产需求号/产品编码)",
+      "SBU_DESC (战略业务单元描述)",
+      "BU_DESC (业务单元描述)",
+      "CUSTOMER (客户名称)",
+      "MONTH (需求起始月份/基准月,即当月M+0)",
+      "REQUIREMENT_QTY (起始月M+0的生产需求数量)",
+      "NEXT_REQUIREMENT (次月M+1的生产需求数量)",
+      "LAST_REQUIREMENT (第3个月M+2的生产需求数量)",
+      "MONTH4 (第4个月M+3的生产需求数量)",
+      "MONTH5 (第5个月M+4的生产需求数量)",
+      "MONTH6 (第6个月M+5的生产需求数量)",
+      "MONTH7 (第7个月M+6的生产需求数量)"
     ],
-    "MAIN_KEY": "PM_VERSION,FGCODE,SBU_DESC,BU_DESC,CUSTOMER",
+    "MAIN_KEY": "PM_VERSION, FGCODE, SBU_DESC, BU_DESC, CUSTOMER",
     "month_col": "MONTH",
     "version_col": "PM_VERSION",
     "relationships": {

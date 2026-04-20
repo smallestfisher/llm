@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Sequence
 
 from app.execution.llm_client import llm_complete
@@ -28,6 +29,7 @@ _ALLOWED_OPS = {
     "set_show_fields",
     "remove_presentation",
 }
+_COMPACT_TIME_OR_VERSION = re.compile(r"20\d{4}(?:W\d{1,2}[VP]\d+)?", re.IGNORECASE)
 
 
 class ConversationResolver:
@@ -52,12 +54,24 @@ class ConversationResolver:
             query_state=planned_state,
             previous_state=previous_state,
         )
-        query_state = self.reducer.apply(previous_state, query_op, planned_state)
         mode = str(parsed.get("mode") or "standalone_query")
         if mode not in _ALLOWED_MODES:
             mode = "standalone_query"
+        if self._should_break_context_for_ambiguous_patch(mode, query_op, planned_state, raw_question):
+            planned_state = self._build_independent_ambiguous_state(raw_question)
+            query_op = self._build_independent_ambiguous_op(raw_question, planned_state)
+        query_state = self.reducer.apply(previous_state, query_op, planned_state)
+        query_state["query_text"] = self._stabilize_query_text(
+            raw_question=raw_question,
+            mode=mode,
+            query_op=query_op,
+            query_state=query_state,
+        )
+        query_op["next_query_text"] = query_state["query_text"]
         confidence = self._coerce_confidence(parsed.get("confidence"), default=0.75)
         reason = str(parsed.get("reason") or query_op.get("summary") or "conversation resolver planned query state")
+        if mode == "ambiguous" and query_op.get("type") == "new_query":
+            reason = "ambiguous input should not inherit previous query context"
         return {
             "state_version": 2,
             "mode": mode,
@@ -135,10 +149,11 @@ class ConversationResolver:
 2. query_state 必须是“应用当前用户输入之后的完整下一状态”，不要只输出增量。
 3. query_op.type 必须使用明确操作类型：new_query/switch_query/switch_domain/set_dimensions/add_dimensions/remove_dimensions/set_filters/remove_filters/set_presentation/set_detail_level/set_show_fields。
 4. 仅在你无法精确表达操作时，才使用 replace_state 或 patch_state。
-5. query_state.query_text 必须是一个完整、自包含、可直接执行的查询描述。
-6. 如果当前输入是在补充显示字段，如“显示版本号/按工厂展开/看明细”，请把这些要求体现在 query_state.dimensions 或 query_state.presentation 中，而不是只写进 reason。
-7. 如果当前输入明显切换到了另一个业务域的新问题，不要继承上一轮 domain/metric/filter。
-8. filters 只保留结构化筛选条件，presentation 只保留展示/粒度/排序类约束。
+5. 对 standalone_query/new_query/switch_query，query_state.query_text 默认保持用户原句，不得改写时间口径、版本表达或统计范围。
+6. 仅在 query_refinement/presentation_refinement 时，才可在不改变原语义前提下补全 query_text。
+7. 如果当前输入是在补充显示字段，如“显示版本号/按工厂展开/看明细”，请把这些要求体现在 query_state.dimensions 或 query_state.presentation 中，而不是只写进 reason。
+8. 如果当前输入明显切换到了另一个业务域的新问题，不要继承上一轮 domain/metric/filter。
+9. filters 只保留结构化筛选条件，presentation 只保留展示/粒度/排序类约束。
 
 上一轮活动查询状态（如果没有则为空对象）：
 {previous_json}
@@ -180,8 +195,7 @@ class ConversationResolver:
     ) -> dict[str, Any]:
         data = dict(state or {}) if isinstance(state, dict) else {}
         extracted_filters = extract_shared_filters(raw_question)
-        filters = dict(previous_state.get("filters") or {}) if isinstance(previous_state, dict) else {}
-        filters.update(dict(data.get("filters") or {}))
+        filters = dict(data.get("filters") or {})
         filters.update(extracted_filters)
 
         domain = str(data.get("domain") or "").strip()
@@ -211,6 +225,88 @@ class ConversationResolver:
             "presentation": self._normalize_json_object(data.get("presentation")),
             "raw_question": raw_question,
             "previous_query_text": str((previous_state or {}).get("query_text") or "").strip(),
+        }
+
+    def _stabilize_query_text(
+        self,
+        *,
+        raw_question: str,
+        mode: str,
+        query_op: dict[str, Any] | None,
+        query_state: dict[str, Any] | None,
+    ) -> str:
+        raw = (raw_question or "").strip()
+        candidate = str((query_state or {}).get("query_text") or "").strip()
+        if not raw:
+            return candidate
+
+        op_type = str((query_op or {}).get("type") or "").strip()
+        if mode in {"standalone_query", "ambiguous"} or op_type in {"new_query", "switch_query", "replace_state"}:
+            return raw
+        if not candidate:
+            return raw
+
+        if self._contains_compact_time_or_version(raw) and not self._contains_compact_time_or_version(candidate):
+            return raw
+        return candidate
+
+    @staticmethod
+    def _contains_compact_time_or_version(text: str) -> bool:
+        return _COMPACT_TIME_OR_VERSION.search((text or "").strip()) is not None
+
+    def _should_break_context_for_ambiguous_patch(
+        self,
+        mode: str,
+        query_op: dict[str, Any] | None,
+        query_state: dict[str, Any] | None,
+        raw_question: str,
+    ) -> bool:
+        if mode != "ambiguous":
+            return False
+        op = dict(query_op or {})
+        if str(op.get("family") or "") != "patch":
+            return False
+        state = dict(query_state or {})
+        if str(state.get("domain") or "").strip():
+            return False
+        if [str(item).strip() for item in list(state.get("domains") or []) if str(item).strip()]:
+            return False
+        if str(state.get("metric") or "").strip():
+            return False
+        if str(state.get("intent") or "").strip():
+            return False
+        if list(state.get("dimensions") or []):
+            return False
+        if dict(state.get("filters") or {}):
+            return False
+        if dict(state.get("presentation") or {}):
+            return False
+        return str(state.get("query_text") or raw_question).strip() == raw_question.strip()
+
+    def _build_independent_ambiguous_state(self, raw_question: str) -> dict[str, Any]:
+        return {
+            "state_version": 1,
+            "domain": "",
+            "domains": [],
+            "metric": "",
+            "intent": "",
+            "query_text": raw_question,
+            "dimensions": [],
+            "filters": extract_shared_filters(raw_question),
+            "presentation": {},
+            "raw_question": raw_question,
+            "previous_query_text": "",
+        }
+
+    def _build_independent_ambiguous_op(self, raw_question: str, query_state: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "type": "new_query",
+            "family": "replace",
+            "summary": raw_question,
+            "source_input": raw_question,
+            "changes": {},
+            "next_domain": query_state.get("domain") or "",
+            "next_query_text": query_state.get("query_text") or raw_question,
         }
 
     def _normalize_query_op(

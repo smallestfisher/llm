@@ -13,7 +13,9 @@ from app.semantic.heuristics import (
 
 _DATE_RANGE = re.compile(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})")
 _MONTH_RANGE = re.compile(r"(\d{4}[-/]\d{1,2})")
-_VERSION_RANGE = re.compile(r"(20\d{2}W\d{2})", re.IGNORECASE)
+_VERSION_FULL_RANGE = re.compile(r"(20\d{2}(?:0[1-9]|1[0-2])W\d{1,2}[VP]\d+)", re.IGNORECASE)
+_VERSION_WEEK_RANGE = re.compile(r"(20\d{2}W\d{1,2})", re.IGNORECASE)
+_COMPACT_MONTH_RANGE = re.compile(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])(?:月)?(?!\d)")
 _FACTORY_RANGE = re.compile(r"\b(B\d+_[A-Z]{2}|BJ\d{2}|CD\d{2}|MY\d{2}|WH\d{2})\b")
 
 
@@ -47,9 +49,13 @@ def extract_shared_filters(question: str) -> dict[str, Any]:
     elif any(token in q for token in ("下周", "下一周")):
         filters["relative_week"] = "next_week"
 
-    version_match = _VERSION_RANGE.search(q)
-    if version_match:
-        filters["PM_VERSION"] = version_match.group(1).upper()
+    version_full_match = _VERSION_FULL_RANGE.search(q)
+    if version_full_match:
+        filters["PM_VERSION"] = version_full_match.group(1).upper()
+    else:
+        version_week_match = _VERSION_WEEK_RANGE.search(q)
+        if version_week_match:
+            filters["PM_VERSION"] = version_week_match.group(1).upper()
 
     factory_match = _FACTORY_RANGE.search(q)
     if factory_match:
@@ -69,6 +75,18 @@ def extract_shared_filters(question: str) -> dict[str, Any]:
             filters["month_to"] = months[1].replace("/", "-")
         else:
             filters["month"] = months[0].replace("/", "-")
+    elif "date_from" not in filters:
+        compact_months = _COMPACT_MONTH_RANGE.findall(q)
+        normalized_months: list[str] = []
+        for year, month in compact_months:
+            value = f"{year}-{month}"
+            if value not in normalized_months:
+                normalized_months.append(value)
+        if len(normalized_months) >= 2:
+            filters["month_from"] = normalized_months[0]
+            filters["month_to"] = normalized_months[1]
+        elif len(normalized_months) == 1:
+            filters["month"] = normalized_months[0]
 
     return filters
 
